@@ -89,7 +89,7 @@ class DockerService
         if ($this->isLocal) {
             $this->dockerProjectsPath = storage_path('server/docker');
         } else {
-            $this->dockerProjectsPath = '/home/docker/projects';
+            $this->dockerProjectsPath = '/var/www/docker';
         }
     }
 
