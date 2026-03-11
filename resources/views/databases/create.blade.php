@@ -52,9 +52,16 @@
                                 onchange="updateDatabaseTypeUI()"
                             >
                                 <option value="mysql" selected>MySQL</option>
-                                <option value="postgresql">PostgreSQL</option>
+                                @if(!($permissions['postgresql']['not_available'] ?? false))
+                                    <option value="postgresql">PostgreSQL</option>
+                                @endif
                             </select>
-                            <div class="form-text">Choose the database engine type.</div>
+                            <div class="form-text">
+                                Choose the database engine type.
+                                @if($permissions['postgresql']['not_available'] ?? false)
+                                    <span class="text-warning">PostgreSQL is not available on this server.</span>
+                                @endif
+                            </div>
                             @error('type')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror

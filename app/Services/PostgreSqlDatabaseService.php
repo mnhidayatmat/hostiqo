@@ -34,6 +34,20 @@ class PostgreSqlDatabaseService implements DatabaseServiceInterface
     {
         try {
             $connection = $this->getConnectionName();
+
+            // Check if PostgreSQL extension is available
+            if (!extension_loaded('pdo_pgsql')) {
+                return [
+                    'can_create' => false,
+                    'has_createdb' => false,
+                    'has_create_role' => false,
+                    'current_user' => null,
+                    'missing_privileges' => ['PostgreSQL PHP extension (pdo_pgsql) is not installed'],
+                    'message' => 'PostgreSQL PHP extension (pdo_pgsql) is not installed. Please install it to enable PostgreSQL support.',
+                    'not_available' => true,
+                ];
+            }
+
             $currentUser = DB::connection($connection)->selectOne("SELECT current_user as user")->user;
 
             // Create cache key based on current user
@@ -44,13 +58,30 @@ class PostgreSqlDatabaseService implements DatabaseServiceInterface
                 return $this->testDatabasePermissions($currentUser, $connection);
             });
         } catch (Exception $e) {
+            $message = $e->getMessage();
+
+            // Check for connection refused or connection error
+            if (stripos($message, 'connection refused') !== false ||
+                stripos($message, 'SQLSTATE[08006]') !== false ||
+                stripos($message, 'could not connect') !== false) {
+                return [
+                    'can_create' => false,
+                    'has_createdb' => false,
+                    'has_create_role' => false,
+                    'current_user' => null,
+                    'missing_privileges' => ['PostgreSQL is not installed or not running'],
+                    'message' => 'PostgreSQL is not installed or not running on this server. Install PostgreSQL to enable PostgreSQL database support.',
+                    'not_available' => true,
+                ];
+            }
+
             return [
                 'can_create' => false,
                 'has_createdb' => false,
                 'has_create_role' => false,
                 'current_user' => null,
-                'missing_privileges' => ['Error: ' . $e->getMessage()],
-                'message' => 'Failed to check permissions: ' . $e->getMessage(),
+                'missing_privileges' => ['Error: ' . $message],
+                'message' => 'Failed to check permissions: ' . $message,
             ];
         }
     }

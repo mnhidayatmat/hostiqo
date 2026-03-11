@@ -6,7 +6,7 @@
 
 @section('page-actions')
     <div class="btn-group">
-        @if($permissions['mysql']['can_create'] || $permissions['postgresql']['can_create'])
+        @if($permissions['mysql']['can_create'] || (($permissions['postgresql']['can_create'] ?? false) && !($permissions['postgresql']['not_available'] ?? false)))
             <a href="{{ route('databases.create') }}" class="btn btn-primary">
                 <i class="bi bi-plus-circle me-1"></i> Create Database
             </a>
@@ -24,22 +24,31 @@
 
 @section('content')
     {{-- Permission Warnings --}}
-    @if(!$permissions['mysql']['can_create'] && !$permissions['postgresql']['can_create'])
+    @if(!$permissions['mysql']['can_create'] && !($permissions['postgresql']['can_create'] ?? false) && !($permissions['postgresql']['not_available'] ?? false))
         <div class="alert alert-warning alert-dismissible fade show" role="alert">
             <i class="bi bi-exclamation-triangle me-2"></i>
             <strong>Insufficient Permissions:</strong> You don't have privileges to create databases for any type.
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>
-    @elseif(!$permissions['mysql']['can_create'])
+    @elseif(!$permissions['mysql']['can_create'] && !($permissions['mysql']['not_available'] ?? false))
         <div class="alert alert-warning alert-dismissible fade show" role="alert">
             <i class="bi bi-exclamation-triangle me-2"></i>
             <strong>MySQL Permissions:</strong> {{ $permissions['mysql']['message'] }}
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>
-    @elseif(!$permissions['postgresql']['can_create'])
+    @elseif(!($permissions['postgresql']['not_available'] ?? false) && !$permissions['postgresql']['can_create'])
         <div class="alert alert-warning alert-dismissible fade show" role="alert">
             <i class="bi bi-exclamation-triangle me-2"></i>
             <strong>PostgreSQL Permissions:</strong> {{ $permissions['postgresql']['message'] }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    @endif
+
+    {{-- PostgreSQL Not Available Notice --}}
+    @if($permissions['postgresql']['not_available'] ?? false)
+        <div class="alert alert-info alert-dismissible fade show" role="alert">
+            <i class="bi bi-info-circle me-2"></i>
+            <strong>PostgreSQL Not Available:</strong> {{ $permissions['postgresql']['message'] }}
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>
     @endif
@@ -50,7 +59,7 @@
                 <i class="bi bi-database text-muted" style="font-size: 4rem;"></i>
                 <h4 class="mt-4">No databases yet</h4>
                 <p class="text-muted">Create your first database to get started.</p>
-                @if($permissions['mysql']['can_create'] || $permissions['postgresql']['can_create'])
+                @if($permissions['mysql']['can_create'] || (($permissions['postgresql']['can_create'] ?? false) && !($permissions['postgresql']['not_available'] ?? false)))
                     <a href="{{ route('databases.create') }}" class="btn btn-primary mt-3">
                         <i class="bi bi-plus-circle me-1"></i> Create Your First Database
                     </a>
