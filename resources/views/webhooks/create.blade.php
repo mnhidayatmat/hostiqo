@@ -188,7 +188,7 @@
                         <div class="mb-3">
                             <label for="pre_deploy_script" class="form-label">Pre-Deploy Script</label>
                             <textarea class="form-control font-monospace @error('pre_deploy_script') is-invalid @enderror" id="pre_deploy_script" name="pre_deploy_script" rows="4" placeholder="Commands to run BEFORE pulling code (e.g., backups, maintenance mode)">{{ old('pre_deploy_script') }}</textarea>
-                            <div class="form-text">Script to run before deployment (e.g., backup, maintenance mode)</div>
+                            <div class="form-text" id="pre_deploy_help">Script to run before deployment (e.g., backup, maintenance mode)</div>
                             @error('pre_deploy_script')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
@@ -197,7 +197,7 @@
                         <div class="mb-3">
                             <label for="post_deploy_script" class="form-label">Post-Deploy Script</label>
                             <textarea class="form-control font-monospace @error('post_deploy_script') is-invalid @enderror" id="post_deploy_script" name="post_deploy_script" rows="5" placeholder="Commands to run AFTER deployment (e.g., composer install, npm install, migrate)">{{ old('post_deploy_script') }}</textarea>
-                            <div class="form-text">Script to run after deployment (e.g., composer install, migrations, build assets)</div>
+                            <div class="form-text" id="post_deploy_help">Script to run after deployment (e.g., composer install, migrations, build assets)</div>
                             @error('post_deploy_script')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
@@ -306,6 +306,11 @@ $(function() {
             $('#docker_image_name_field').hide();
         }
     });
+
+    // Project type change handler
+    $('#project_type').on('change', function() {
+        updateScriptPlaceholders($(this).val());
+    });
 });
 
 function toggleDockerFields() {
@@ -316,6 +321,38 @@ function toggleDockerFields() {
         dockerCard.style.display = 'block';
     } else {
         dockerCard.style.display = 'none';
+    }
+
+    updateScriptPlaceholders(projectType);
+}
+
+function updateScriptPlaceholders(projectType) {
+    const preScript = document.getElementById('pre_deploy_script');
+    const postScript = document.getElementById('post_deploy_script');
+    const preHelp = document.getElementById('pre_deploy_help');
+    const postHelp = document.getElementById('post_deploy_help');
+
+    if (projectType === 'docker') {
+        // Docker-specific placeholders
+        preScript.placeholder = "docker compose exec -T app php artisan down --maintenance";
+        preHelp.textContent = "Script to run BEFORE restarting containers (e.g., maintenance mode, backups)";
+
+        postScript.placeholder = "docker compose exec -T app php artisan migrate --force\\ndocker compose exec -T app npm run build\\ndocker compose exec -T app php artisan cache:clear";
+        postHelp.textContent = "Script to run AFTER containers are running (run inside container, use docker compose exec)";
+    } else if (projectType === 'node') {
+        // Node.js-specific placeholders
+        preScript.placeholder = "pm2 stop app || true";
+        preHelp.textContent = "Script to run BEFORE pulling code (e.g., stop processes)";
+
+        postScript.placeholder = "npm install\\nnpm run build\\npm2 restart app";
+        postHelp.textContent = "Script to run AFTER deployment (e.g., install dependencies, build, restart)";
+    } else {
+        // PHP-specific placeholders (default)
+        preScript.placeholder = "Commands to run BEFORE pulling code (e.g., backups, maintenance mode)";
+        preHelp.textContent = "Script to run before deployment (e.g., backup, maintenance mode)";
+
+        postScript.placeholder = "/usr/bin/php8.3 /usr/local/bin/composer install --no-dev\\n/usr/bin/php8.3 artisan migrate --force\\n/usr/bin/php8.3 artisan config:cache";
+        postHelp.textContent = "Script to run after deployment (e.g., composer install, migrations, build assets)";
     }
 }
 </script>
