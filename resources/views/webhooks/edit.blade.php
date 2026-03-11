@@ -272,12 +272,12 @@ function updateScriptPlaceholders(projectType) {
         postScript.placeholder = "npm install\\nnpm run build\\npm2 restart app";
         postHelp.textContent = "Script to run AFTER deployment (e.g., install dependencies, build, restart)";
     } else {
-        // PHP-specific placeholders (default) - with actual examples
-        preScript.placeholder = "#!/bin/bash\\necho 'Running pre-deploy script...'";
-        preHelp.textContent = "Script to run before deployment (e.g., backup, maintenance mode)";
+        // PHP-specific placeholders (default)
+        preScript.placeholder = "npm install\\nnpm run build";
+        preHelp.textContent = "Script to run before deployment (e.g., install npm dependencies, build assets)";
 
-        postScript.placeholder = "/usr/bin/php8.3 /usr/local/bin/composer install --no-dev\\n/usr/bin/php8.3 artisan migrate --force\\n/usr/bin/php8.3 artisan config:cache\\n/usr/bin/php8.3 artisan route:cache\\nnpm install && npm run build";
-        postHelp.textContent = "Script to run after deployment (e.g., composer install, migrations, build assets)";
+        postScript.placeholder = "#!/bin/bash\\n/usr/bin/php8.4 /usr/local/bin/composer install --no-dev --optimize-autoloader\\nnpm run build\\n/usr/bin/php8.4 artisan migrate --force\\n/usr/bin/php8.4 artisan config:clear\\n/usr/bin/php8.4 artisan cache:clear\\n/usr/bin/php8.4 artisan route:clear\\n/usr/bin/php8.4 artisan view:clear";
+        postHelp.textContent = "Script to run after deployment (composer install, migrations, clear caches)";
     }
 }
 
