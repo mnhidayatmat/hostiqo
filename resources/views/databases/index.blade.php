@@ -2,64 +2,45 @@
 
 @section('title', 'Databases - Hostiqo')
 @section('page-title', 'Database Management')
-@section('page-description', 'Manage MySQL databases and users')
+@section('page-description', 'Manage MySQL and PostgreSQL databases')
 
 @section('page-actions')
     <div class="btn-group">
-        @if($permissions['can_create'])
+        @if($permissions['mysql']['can_create'] || $permissions['postgresql']['can_create'])
             <a href="{{ route('databases.create') }}" class="btn btn-primary">
                 <i class="bi bi-plus-circle me-1"></i> Create Database
             </a>
         @else
-            <button class="btn btn-primary" disabled title="Insufficient MySQL privileges">
+            <button class="btn btn-primary" disabled title="Insufficient privileges">
                 <i class="bi bi-plus-circle me-1"></i> Create Database
             </button>
         @endif
 
-        @if(!$permissions['can_create'])
-            <a href="{{ route('databases.recheck-permissions') }}" class="btn btn-outline-secondary" title="Recheck permissions">
-                <i class="bi bi-arrow-clockwise"></i>
-            </a>
-        @endif
+        <a href="{{ route('databases.recheck-permissions') }}" class="btn btn-outline-secondary" title="Recheck permissions">
+            <i class="bi bi-arrow-clockwise"></i>
+        </a>
     </div>
 @endsection
 
 @section('content')
-    @if(!$permissions['can_create'])
+    {{-- Permission Warnings --}}
+    @if(!$permissions['mysql']['can_create'] && !$permissions['postgresql']['can_create'])
         <div class="alert alert-warning alert-dismissible fade show" role="alert">
             <i class="bi bi-exclamation-triangle me-2"></i>
-            <strong>Insufficient Permissions:</strong> {{ $permissions['message'] }}
-            <br>
-            <small class="mt-2 d-block">
-                <strong>Current User:</strong> <code>{{ $permissions['current_user'] ?? 'Unknown' }}</code><br>
-                <strong>Missing Privileges:</strong>
-                @foreach($permissions['missing_privileges'] ?? [] as $privilege)
-                    <span class="badge bg-danger">{{ $privilege }}</span>
-                @endforeach
-            </small>
-            @if(!empty($permissions['grants']))
-                <details class="mt-2" open>
-                    <summary class="cursor-pointer small"><strong>View Current Grants (Debug)</strong></summary>
-                    <div class="mt-2 p-2 bg-light rounded">
-                        @foreach($permissions['grants'] as $grant)
-                            <code class="d-block small text-dark mb-1">{{ $grant }}</code>
-                        @endforeach
-                    </div>
-                </details>
-            @endif
+            <strong>Insufficient Permissions:</strong> You don't have privileges to create databases for any type.
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>
-    @endif
-
-    {{-- Debug Info (only in local environment) --}}
-    @if(config('app.env') === 'local' && !empty($permissions['grants']))
-        <div class="alert alert-info">
-            <strong>Debug Info (Local Only):</strong><br>
-            <small>
-                has_create_db: {{ $permissions['has_create_db'] ? 'true' : 'false' }}<br>
-                has_create_user: {{ $permissions['has_create_user'] ? 'true' : 'false' }}<br>
-                has_grant_option: {{ $permissions['has_grant_option'] ? 'true' : 'false' }}
-            </small>
+    @elseif(!$permissions['mysql']['can_create'])
+        <div class="alert alert-warning alert-dismissible fade show" role="alert">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            <strong>MySQL Permissions:</strong> {{ $permissions['mysql']['message'] }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    @elseif(!$permissions['postgresql']['can_create'])
+        <div class="alert alert-warning alert-dismissible fade show" role="alert">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            <strong>PostgreSQL Permissions:</strong> {{ $permissions['postgresql']['message'] }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>
     @endif
 
@@ -69,15 +50,15 @@
                 <i class="bi bi-database text-muted" style="font-size: 4rem;"></i>
                 <h4 class="mt-4">No databases yet</h4>
                 <p class="text-muted">Create your first database to get started.</p>
-                @if($permissions['can_create'])
+                @if($permissions['mysql']['can_create'] || $permissions['postgresql']['can_create'])
                     <a href="{{ route('databases.create') }}" class="btn btn-primary mt-3">
                         <i class="bi bi-plus-circle me-1"></i> Create Your First Database
                     </a>
                 @else
-                    <button class="btn btn-primary mt-3" disabled title="Insufficient MySQL privileges">
+                    <button class="btn btn-primary mt-3" disabled title="Insufficient privileges">
                         <i class="bi bi-plus-circle me-1"></i> Create Your First Database
                     </button>
-                    <p class="text-danger mt-3 small">You don't have sufficient MySQL privileges to create databases.</p>
+                    <p class="text-danger mt-3 small">You don't have sufficient privileges to create databases.</p>
                 @endif
             </div>
         </div>
@@ -91,15 +72,18 @@
                             <i class="bi bi-chevron-right chevron-icon" id="chevron-{{ $database->id }}"
                                style="font-size: 1.25rem; color: #9ca3af; margin-top: 0.25rem;"></i>
                             <div class="database-icon">
-                                <i class="bi bi-database"></i>
+                                <i class="{{ $database->getTypeIcon() }}"></i>
                             </div>
                             <div class="flex-grow-1">
                                 <div class="database-name">
                                     {{ $database->name }}
-                                    <span class="status-dot {{ $database->exists_in_mysql ? 'active' : 'inactive' }}"></span>
+                                    <span class="status-dot {{ $database->exists_in_server ? 'active' : 'inactive' }}"></span>
                                 </div>
                                 <div class="database-username">
-                                    {{ $database->host }}
+                                    {{ $database->username }}@{{ $database->host }}
+                                    <span class="badge badge-sm badge-pastel-{{ $database->getTypeBadgeColor() }} ms-2">
+                                        {{ $database->getTypeLabel() }}
+                                    </span>
                                 </div>
                             </div>
                         </div>
@@ -144,6 +128,14 @@
                             <span class="info-label"><i class="bi bi-hdd-network"></i> Host</span>
                             <span class="info-value">{{ $database->host }}</span>
                         </div>
+                        <div class="info-row">
+                            <span class="info-label"><i class="bi bi-diagram-3"></i> Type</span>
+                            <span class="info-value">
+                                <span class="badge badge-md badge-pastel-{{ $database->getTypeBadgeColor() }}">
+                                    {{ $database->getTypeLabel() }}
+                                </span>
+                            </span>
+                        </div>
                         @if($database->description)
                         <div class="info-row">
                             <span class="info-label"><i class="bi bi-card-text"></i> Description</span>
@@ -155,11 +147,11 @@
                         <div class="section-label">STATISTICS</div>
                         <div class="info-row">
                             <span class="info-label"><i class="bi bi-activity"></i> Status</span>
-                            <span class="badge badge-md badge-pastel-{{ $database->exists_in_mysql ? 'green' : 'red' }}">
-                                {{ $database->exists_in_mysql ? 'Active' : 'Not Found' }}
+                            <span class="badge badge-md badge-pastel-{{ $database->exists_in_server ? 'green' : 'red' }}">
+                                {{ $database->exists_in_server ? 'Active' : 'Not Found' }}
                             </span>
                         </div>
-                        @if($database->exists_in_mysql)
+                        @if($database->exists_in_server)
                         <div class="info-row">
                             <span class="info-label"><i class="bi bi-hdd"></i> Database Size</span>
                             <span class="info-value">{{ $database->size_mb }} MB</span>

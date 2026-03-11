@@ -22,8 +22,8 @@ class DatabaseController extends Controller
      */
     public function recheckPermissions()
     {
-        $this->databaseService->clearPermissionCache();
-        
+        $this->databaseService->clearAllPermissionCaches();
+
         return redirect()
             ->route('databases.index')
             ->with('success', 'Permissions rechecked successfully!');
@@ -37,22 +37,25 @@ class DatabaseController extends Controller
     public function index()
     {
         $databases = Database::latest()->paginate(15);
-        
-        // Get MySQL databases list
-        $mysqlDatabases = $this->databaseService->listDatabases();
-        
-        // Enhance database records with MySQL info
+
+        // Enhance database records with real-time info
         foreach ($databases as $database) {
-            $database->exists_in_mysql = in_array($database->name, $mysqlDatabases);
-            if ($database->exists_in_mysql) {
-                $database->size_mb = $this->databaseService->getDatabaseSize($database->name);
-                $database->table_count = $this->databaseService->getTableCount($database->name);
+            $service = $database->getService();
+            $dbList = $service->listDatabases();
+            $database->exists_in_server = in_array($database->name, $dbList);
+
+            if ($database->exists_in_server) {
+                $database->size_mb = $service->getDatabaseSize($database->name);
+                $database->table_count = $service->getTableCount($database->name);
             }
         }
-        
-        // Check if user has permission to create databases
-        $permissions = $this->databaseService->canCreateDatabase();
-        
+
+        // Check permissions for both database types
+        $permissions = [
+            'mysql' => $this->databaseService->mysql()->canCreateDatabase(),
+            'postgresql' => $this->databaseService->postgresql()->canCreateDatabase(),
+        ];
+
         return view('databases.index', compact('databases', 'permissions'));
     }
 
@@ -63,17 +66,12 @@ class DatabaseController extends Controller
      */
     public function create()
     {
-        // Check if user has permission to create databases
-        $permissions = $this->databaseService->canCreateDatabase();
-        
-        if (!$permissions['can_create']) {
-            return redirect()
-                ->route('databases.index')
-                ->withErrors([
-                    'permission' => $permissions['message']
-                ]);
-        }
-        
+        // Check permissions for both database types
+        $permissions = [
+            'mysql' => $this->databaseService->mysql()->canCreateDatabase(),
+            'postgresql' => $this->databaseService->postgresql()->canCreateDatabase(),
+        ];
+
         return view('databases.create', compact('permissions'));
     }
 
@@ -85,15 +83,8 @@ class DatabaseController extends Controller
      */
     public function store(Request $request)
     {
-        // Check permissions before proceeding
-        $permissions = $this->databaseService->canCreateDatabase();
-        if (!$permissions['can_create']) {
-            return back()
-                ->withInput()
-                ->withErrors(['permission' => $permissions['message']]);
-        }
-
         $validated = $request->validate([
+            'type' => ['required', 'in:mysql,postgresql'],
             'name' => ['required', 'string', 'max:64', 'regex:/^[a-zA-Z0-9_]+$/', 'unique:databases,name'],
             'username' => ['required', 'string', 'max:32', 'regex:/^[a-zA-Z0-9_]+$/'],
             'password' => ['required', 'string', 'min:8', 'confirmed'],
@@ -102,17 +93,30 @@ class DatabaseController extends Controller
         ]);
 
         $host = $validated['host'] ?? 'localhost';
+        $type = $validated['type'];
+
+        // Get the appropriate service
+        $service = $this->databaseService->connection($type);
 
         try {
-            // Check if database already exists in MySQL
-            if ($this->databaseService->databaseExists($validated['name'])) {
+            // Check permissions
+            $permissions = $service->canCreateDatabase();
+            if (!$permissions['can_create']) {
                 return back()
                     ->withInput()
-                    ->withErrors(['name' => 'Database already exists in MySQL.']);
+                    ->withErrors(['permission' => $permissions['message']]);
             }
 
-            // Create database and user in MySQL
-            $this->databaseService->createDatabase(
+            // Check if database already exists
+            if ($service->databaseExists($validated['name'])) {
+                $typeName = $type === 'postgresql' ? 'PostgreSQL' : 'MySQL';
+                return back()
+                    ->withInput()
+                    ->withErrors(['name' => "Database already exists in {$typeName}."]);
+            }
+
+            // Create database and user
+            $service->createDatabase(
                 $validated['name'],
                 $validated['username'],
                 $validated['password'],
@@ -121,6 +125,7 @@ class DatabaseController extends Controller
 
             // Save to tracking table
             $database = Database::create([
+                'type' => $type,
                 'name' => $validated['name'],
                 'username' => $validated['username'],
                 'host' => $host,
@@ -145,12 +150,14 @@ class DatabaseController extends Controller
      */
     public function show(Database $database)
     {
-        $database->exists_in_mysql = $this->databaseService->databaseExists($database->name);
-        if ($database->exists_in_mysql) {
-            $database->size_mb = $this->databaseService->getDatabaseSize($database->name);
-            $database->table_count = $this->databaseService->getTableCount($database->name);
+        $service = $database->getService();
+        $database->exists_in_server = $service->databaseExists($database->name);
+
+        if ($database->exists_in_server) {
+            $database->size_mb = $service->getDatabaseSize($database->name);
+            $database->table_count = $service->getTableCount($database->name);
         }
-        
+
         return view('databases.show', compact('database'));
     }
 
@@ -210,7 +217,8 @@ class DatabaseController extends Controller
         ]);
 
         try {
-            $this->databaseService->changeUserPassword(
+            $service = $database->getService();
+            $service->changeUserPassword(
                 $database->username,
                 $validated['password'],
                 $database->host
@@ -234,14 +242,16 @@ class DatabaseController extends Controller
     public function destroy(Database $database)
     {
         try {
-            // Delete database from MySQL
-            if ($this->databaseService->databaseExists($database->name)) {
-                $this->databaseService->deleteDatabase($database->name);
+            $service = $database->getService();
+
+            // Delete database from server
+            if ($service->databaseExists($database->name)) {
+                $service->deleteDatabase($database->name);
             }
 
-            // Delete user from MySQL
-            if ($this->databaseService->userExists($database->username, $database->host)) {
-                $this->databaseService->deleteUser($database->username, $database->host);
+            // Delete user from server
+            if ($service->userExists($database->username, $database->host)) {
+                $service->deleteUser($database->username, $database->host);
             }
 
             // Delete from tracking table

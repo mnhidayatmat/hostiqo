@@ -2,7 +2,7 @@
 
 @section('title', 'Create Database - Hostiqo')
 @section('page-title', 'Create New Database')
-@section('page-description', 'Create a new MySQL database and user')
+@section('page-description', 'Create a new MySQL or PostgreSQL database and user')
 
 @section('page-actions')
     <a href="{{ route('databases.index') }}" class="btn btn-outline-secondary">
@@ -14,16 +14,22 @@
     <div class="row">
         <div class="col-lg-8">
             <!-- Permission Status -->
-            @if(isset($permissions) && $permissions['can_create'])
-                <div class="alert alert-success alert-dismissible fade show" role="alert">
-                    <i class="bi bi-check-circle me-2"></i>
-                    <strong>Permissions Verified:</strong> You have all required privileges to create databases.
-                    <br>
-                    <small class="mt-1 d-block">
-                        <strong>MySQL User:</strong> <code>{{ $permissions['current_user'] }}</code>
-                    </small>
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>
+            @if(isset($permissions))
+                @foreach($permissions as $type => $perm)
+                    @if($perm['can_create'])
+                        <div class="alert alert-success alert-dismissible fade show" role="alert">
+                            <i class="bi bi-check-circle me-2"></i>
+                            <strong>{{ ucfirst($type) }} Permissions Verified:</strong> You have all required privileges to create {{ $type }} databases.
+                            @if(isset($perm['current_user']))
+                                <br>
+                                <small class="mt-1 d-block">
+                                    <strong>{{ ucfirst($type) }} User:</strong> <code>{{ $perm['current_user'] }}</code>
+                                </small>
+                            @endif
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    @endif
+                @endforeach
             @endif
 
             <form action="{{ route('databases.store') }}" method="POST">
@@ -34,6 +40,26 @@
                         <i class="bi bi-database me-2"></i> Database Configuration
                     </div>
                     <div class="card-body">
+                        <div class="mb-3">
+                            <label for="type" class="form-label">
+                                Database Type <span class="text-danger">*</span>
+                            </label>
+                            <select
+                                class="form-select @error('type') is-invalid @enderror"
+                                id="type"
+                                name="type"
+                                required
+                                onchange="updateDatabaseTypeUI()"
+                            >
+                                <option value="mysql" selected>MySQL</option>
+                                <option value="postgresql">PostgreSQL</option>
+                            </select>
+                            <div class="form-text">Choose the database engine type.</div>
+                            @error('type')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+
                         <div class="mb-3">
                             <label for="name" class="form-label">
                                 Database Name <span class="text-danger">*</span>
@@ -146,10 +172,16 @@
                     </div>
                 </div>
 
-                <div class="alert alert-info">
+                <div class="alert alert-info" id="mysql-note">
                     <i class="bi bi-info-circle me-2"></i>
                     <strong>Note:</strong> This will create a new MySQL database and user with full privileges on the database.
                     Make sure to save the credentials securely.
+                </div>
+
+                <div class="alert alert-info d-none" id="postgresql-note">
+                    <i class="bi bi-info-circle me-2"></i>
+                    <strong>Note:</strong> This will create a new PostgreSQL database and role with full privileges on the database.
+                    PostgreSQL uses UTF8 encoding by default. Make sure to save the credentials securely.
                 </div>
 
                 <div class="d-flex gap-2 mt-4">
@@ -169,7 +201,10 @@
                     <i class="bi bi-lightbulb me-2"></i> Quick Tips
                 </div>
                 <div class="card-body">
-                    <h6>Database Naming</h6>
+                    <h6>Database Type Selection</h6>
+                    <p class="small">Choose <strong>MySQL</strong> for traditional web applications. Choose <strong>PostgreSQL</strong> for advanced features like JSONB, full-text search, and complex queries.</p>
+
+                    <h6 class="mt-3">Database Naming</h6>
                     <p class="small">Use descriptive names like <code>projectname_db</code> or <code>app_production</code> to easily identify databases.</p>
 
                     <h6 class="mt-3">Strong Passwords</h6>
@@ -179,7 +214,7 @@
                     <p class="small">Use <code>localhost</code> for local access only (most secure). Use specific IPs for remote access instead of <code>%</code> (any host).</p>
 
                     <h6 class="mt-3">User Privileges</h6>
-                    <p class="small">The created user will have FULL privileges (SELECT, INSERT, UPDATE, DELETE, etc.) on the database only.</p>
+                    <p class="small">The created user/role will have FULL privileges (SELECT, INSERT, UPDATE, DELETE, etc.) on the database only.</p>
 
                     <h6 class="mt-3">Credentials Storage</h6>
                     <p class="small">Save the database credentials securely. Store them in your application's <code>.env</code> file and never commit to version control.</p>
@@ -187,4 +222,20 @@
             </div>
         </div>
     </div>
+
+    <script>
+        function updateDatabaseTypeUI() {
+            const type = document.getElementById('type').value;
+            const mysqlNote = document.getElementById('mysql-note');
+            const postgresqlNote = document.getElementById('postgresql-note');
+
+            if (type === 'postgresql') {
+                mysqlNote.classList.add('d-none');
+                postgresqlNote.classList.remove('d-none');
+            } else {
+                mysqlNote.classList.remove('d-none');
+                postgresqlNote.classList.add('d-none');
+            }
+        }
+    </script>
 @endsection
