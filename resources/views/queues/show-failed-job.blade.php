@@ -84,7 +84,7 @@
                     </h5>
                 </div>
                 <div class="card-body">
-                    <pre class="bg-light p-3 rounded" style="max-height: 500px; overflow-y: auto;"><code>{{ json_encode($job['payload'], JSON_PRETTY_PRINT) }}</code></pre>
+                    <pre class="bg-dark p-3 rounded text-light" style="max-height: 500px; overflow-y: auto;"><code>{{ json_encode($job['payload'], JSON_PRETTY_PRINT) }}</code></pre>
                 </div>
             </div>
         </div>
