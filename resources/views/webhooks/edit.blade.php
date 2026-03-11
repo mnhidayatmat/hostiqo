@@ -163,7 +163,7 @@
                     <div class="card-body">
                         <div class="mb-3">
                             <label for="pre_deploy_script" class="form-label">Pre-Deploy Script</label>
-                            <textarea class="form-control font-monospace @error('pre_deploy_script') is-invalid @enderror" id="pre_deploy_script" name="pre_deploy_script" rows="4">{{ old('pre_deploy_script', $webhook->pre_deploy_script) }}</textarea>
+                            <textarea class="form-control font-monospace @error('pre_deploy_script') is-invalid @enderror" id="pre_deploy_script" name="pre_deploy_script" rows="4" placeholder="Commands to run BEFORE pulling code (e.g., backups, maintenance mode)">{{ old('pre_deploy_script', $webhook->pre_deploy_script) }}</textarea>
                             @error('pre_deploy_script')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
@@ -171,7 +171,7 @@
 
                         <div class="mb-3">
                             <label for="post_deploy_script" class="form-label">Post-Deploy Script</label>
-                            <textarea class="form-control font-monospace @error('post_deploy_script') is-invalid @enderror" id="post_deploy_script" name="post_deploy_script" rows="4">{{ old('post_deploy_script', $webhook->post_deploy_script) }}</textarea>
+                            <textarea class="form-control font-monospace @error('post_deploy_script') is-invalid @enderror" id="post_deploy_script" name="post_deploy_script" rows="4" placeholder="Commands to run AFTER deployment (e.g., composer install, npm install, migrate)">{{ old('post_deploy_script', $webhook->post_deploy_script) }}</textarea>
                             @error('post_deploy_script')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
