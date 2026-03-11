@@ -34,6 +34,14 @@ class Website extends Model
         'ssl_last_checked_at',
         'ssl_auto_renew',
         'pm2_status',
+        'docker_compose_path',
+        'docker_image',
+        'docker_tag',
+        'docker_status',
+        'docker_env',
+        'docker_ports',
+        'docker_volumes',
+        'docker_template',
         'cloudflare_zone_id',
         'cloudflare_record_id',
         'cloudflare_www_record_id',
@@ -55,6 +63,9 @@ class Website extends Model
         'is_active' => 'boolean',
         'ssl_auto_renew' => 'boolean',
         'php_settings' => 'array',
+        'docker_env' => 'array',
+        'docker_ports' => 'array',
+        'docker_volumes' => 'array',
         'ssl_issued_at' => 'datetime',
         'ssl_expires_at' => 'datetime',
         'ssl_last_checked_at' => 'datetime',
@@ -71,6 +82,7 @@ class Website extends Model
         return match($this->project_type) {
             'php' => 'primary',
             'node' => 'success',
+            'docker' => 'info',
             default => 'secondary',
         };
     }
@@ -82,9 +94,14 @@ class Website extends Model
      */
     public function getVersionDisplayAttribute(): string
     {
-        return $this->project_type === 'php' 
-            ? ($this->php_version ?? 'Default')
-            : ($this->node_version ?? 'Default');
+        return match($this->project_type) {
+            'php' => $this->php_version ?? 'Default',
+            'node' => $this->node_version ?? 'Default',
+            'docker' => $this->docker_image
+                ? ($this->docker_tag ? "{$this->docker_image}:{$this->docker_tag}" : $this->docker_image)
+                : ($this->docker_template ?? 'Custom'),
+            default => 'Default',
+        };
     }
 
     /**
@@ -141,6 +158,24 @@ class Website extends Model
             'stopped' => 'secondary',
             'error' => 'danger',
             'unknown' => 'warning',
+            default => 'secondary',
+        };
+    }
+
+    /**
+     * Get the Docker status badge color.
+     *
+     * @return string The badge color class
+     */
+    public function getDockerStatusBadgeAttribute(): string
+    {
+        return match($this->docker_status) {
+            'running' => 'success',
+            'stopped' => 'secondary',
+            'restarting' => 'warning',
+            'error' => 'danger',
+            'exited' => 'danger',
+            'pending' => 'warning',
             default => 'secondary',
         };
     }

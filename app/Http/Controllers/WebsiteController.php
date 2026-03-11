@@ -6,6 +6,7 @@ use App\Jobs\DeployNginxConfig;
 use App\Jobs\RequestSslCertificate;
 use App\Models\Website;
 use App\Services\CloudflareService;
+use App\Services\DockerService;
 use App\Services\Pm2Service;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -62,7 +63,7 @@ class WebsiteController extends Controller
             'domain' => ['required', 'string', 'max:255', 'unique:websites,domain'],
             'root_path' => ['nullable', 'string', 'max:500'],
             'working_directory' => ['nullable', 'string', 'max:500'],
-            'project_type' => ['required', 'in:php,node'],
+            'project_type' => ['required', 'in:php,node,docker'],
             'php_version' => ['required_if:project_type,php', 'nullable', 'string', 'max:10'],
             'node_version' => ['nullable', 'string', 'max:10'],
             'php_settings' => ['nullable', 'array'],
@@ -70,6 +71,8 @@ class WebsiteController extends Controller
             'ssl_enabled' => ['boolean'],
             'www_redirect' => ['nullable', 'in:none,to_www,to_non_www'],
             'is_active' => ['boolean'],
+            'docker_template' => ['nullable', 'string', 'max:50'],
+            'docker_env' => ['nullable', 'array'],
         ]);
 
         // Auto-generate root_path if not provided
@@ -108,7 +111,36 @@ class WebsiteController extends Controller
 
         $website = Website::create($validated);
 
-        // Dispatch job to deploy Nginx configuration
+        // Handle Docker projects
+        if ($website->project_type === 'docker') {
+            $dockerService = app(DockerService::class);
+
+            // Set default port if not provided
+            if (empty($website->port)) {
+                $template = $dockerService->getTemplate($website->docker_template ?? '');
+                $website->update(['port' => $template['default_port'] ?? 8080]);
+            }
+
+            // Create Docker compose file
+            $dockerService->createComposeFile($website);
+
+            // Start containers
+            $dockerService->startContainers($website);
+
+            // Deploy Nginx configuration for reverse proxy
+            dispatch(new DeployNginxConfig($website));
+
+            // If SSL is enabled, dispatch SSL certificate request
+            if ($website->ssl_enabled) {
+                dispatch(new RequestSslCertificate($website));
+            }
+
+            return redirect()
+                ->route('websites.index', ['type' => 'docker'])
+                ->with('success', 'Docker project created successfully! Containers are starting.');
+        }
+
+        // Dispatch job to deploy Nginx configuration for PHP/Node projects
         dispatch(new DeployNginxConfig($website));
 
         // If SSL is enabled, dispatch SSL certificate request
@@ -162,7 +194,7 @@ class WebsiteController extends Controller
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'working_directory' => ['nullable', 'string', 'max:500'],
-            'project_type' => ['required', 'in:php,node'],
+            'project_type' => ['required', 'in:php,node,docker'],
             'php_version' => ['required_if:project_type,php', 'nullable', 'string', 'max:10'],
             'node_version' => ['nullable', 'string', 'max:10'],
             'php_settings' => ['nullable', 'array'],
@@ -170,6 +202,8 @@ class WebsiteController extends Controller
             'ssl_enabled' => ['boolean'],
             'www_redirect' => ['nullable', 'in:none,to_www,to_non_www'],
             'is_active' => ['boolean'],
+            'docker_template' => ['nullable', 'string', 'max:50'],
+            'docker_env' => ['nullable', 'array'],
         ]);
 
         // Set working_directory to '/' if not provided (relative to root_path)
@@ -252,7 +286,13 @@ class WebsiteController extends Controller
                 $phpFpmService->restart($website->php_version);
             }
         }
-        
+
+        // Delete Docker containers and volumes if Docker project
+        if ($website->project_type === 'docker') {
+            $dockerService = app(DockerService::class);
+            $dockerService->deleteProject($website, deleteVolumes: true);
+        }
+
         $website->delete();
 
         return redirect()
@@ -552,5 +592,165 @@ class WebsiteController extends Controller
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    /**
+     * Start Docker containers for a website.
+     *
+     * @param Website $website The website model
+     * @param DockerService $dockerService The Docker service
+     * @return \Illuminate\Http\RedirectResponse
+     */
+    public function dockerStart(Website $website, DockerService $dockerService)
+    {
+        if ($website->project_type !== 'docker') {
+            return redirect()
+                ->route('websites.show', $website)
+                ->with('error', 'Docker control is only available for Docker projects.');
+        }
+
+        $result = $dockerService->startContainers($website);
+
+        if ($result['success']) {
+            return redirect()
+                ->route('websites.show', $website)
+                ->with('success', $result['message']);
+        }
+
+        return redirect()
+            ->route('websites.show', $website)
+            ->with('error', $result['error']);
+    }
+
+    /**
+     * Stop Docker containers for a website.
+     *
+     * @param Website $website The website model
+     * @param DockerService $dockerService The Docker service
+     * @return \Illuminate\Http\RedirectResponse
+     */
+    public function dockerStop(Website $website, DockerService $dockerService)
+    {
+        if ($website->project_type !== 'docker') {
+            return redirect()
+                ->route('websites.show', $website)
+                ->with('error', 'Docker control is only available for Docker projects.');
+        }
+
+        $result = $dockerService->stopContainers($website);
+
+        if ($result['success']) {
+            return redirect()
+                ->route('websites.show', $website)
+                ->with('success', $result['message']);
+        }
+
+        return redirect()
+            ->route('websites.show', $website)
+            ->with('error', $result['error']);
+    }
+
+    /**
+     * Restart Docker containers for a website.
+     *
+     * @param Website $website The website model
+     * @param DockerService $dockerService The Docker service
+     * @return \Illuminate\Http\RedirectResponse
+     */
+    public function dockerRestart(Website $website, DockerService $dockerService)
+    {
+        if ($website->project_type !== 'docker') {
+            return redirect()
+                ->route('websites.show', $website)
+                ->with('error', 'Docker control is only available for Docker projects.');
+        }
+
+        $result = $dockerService->restartContainers($website);
+
+        if ($result['success']) {
+            return redirect()
+                ->route('websites.show', $website)
+                ->with('success', $result['message']);
+        }
+
+        return redirect()
+            ->route('websites.show', $website)
+            ->with('error', $result['error']);
+    }
+
+    /**
+     * Pull latest Docker images for a website.
+     *
+     * @param Website $website The website model
+     * @param DockerService $dockerService The Docker service
+     * @return \Illuminate\Http\RedirectResponse
+     */
+    public function dockerPull(Website $website, DockerService $dockerService)
+    {
+        if ($website->project_type !== 'docker') {
+            return redirect()
+                ->route('websites.show', $website)
+                ->with('error', 'Docker control is only available for Docker projects.');
+        }
+
+        $result = $dockerService->pullImages($website);
+
+        if ($result['success']) {
+            return redirect()
+                ->route('websites.show', $website)
+                ->with('success', $result['message']);
+        }
+
+        return redirect()
+            ->route('websites.show', $website)
+            ->with('error', $result['error']);
+    }
+
+    /**
+     * Get Docker container logs for a website.
+     *
+     * @param Website $website The website model
+     * @param DockerService $dockerService The Docker service
+     * @return \Illuminate\Http\Response
+     */
+    public function dockerLogs(Website $website, DockerService $dockerService)
+    {
+        if ($website->project_type !== 'docker') {
+            return response('Not a Docker project', 400);
+        }
+
+        $service = request()->query('service');
+        $lines = request()->query('lines', 100);
+
+        $result = $dockerService->getLogs($website, $service, (int) $lines);
+
+        if ($result['success']) {
+            return response($result['logs'])
+                ->header('Content-Type', 'text/plain');
+        }
+
+        return response($result['error'] ?? 'Failed to get logs', 500)
+            ->header('Content-Type', 'text/plain');
+    }
+
+    /**
+     * Get Docker container status for a website.
+     *
+     * @param Website $website The website model
+     * @param DockerService $dockerService The Docker service
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function dockerStatus(Website $website, DockerService $dockerService)
+    {
+        if ($website->project_type !== 'docker') {
+            return response()->json([
+                'success' => false,
+                'error' => 'Not a Docker project'
+            ], 400);
+        }
+
+        $result = $dockerService->getContainerStatus($website);
+
+        return response()->json($result);
     }
 }

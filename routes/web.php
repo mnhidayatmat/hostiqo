@@ -91,7 +91,21 @@ Route::middleware('auth')->group(function () {
         ->name('websites.pm2-stop');
     Route::post('websites/{website}/pm2-restart', [WebsiteController::class, 'pm2Restart'])
         ->name('websites.pm2-restart');
-    
+
+    // Docker Container Control
+    Route::post('websites/{website}/docker-start', [WebsiteController::class, 'dockerStart'])
+        ->name('websites.docker-start');
+    Route::post('websites/{website}/docker-stop', [WebsiteController::class, 'dockerStop'])
+        ->name('websites.docker-stop');
+    Route::post('websites/{website}/docker-restart', [WebsiteController::class, 'dockerRestart'])
+        ->name('websites.docker-restart');
+    Route::post('websites/{website}/docker-pull', [WebsiteController::class, 'dockerPull'])
+        ->name('websites.docker-pull');
+    Route::get('websites/{website}/docker-logs', [WebsiteController::class, 'dockerLogs'])
+        ->name('websites.docker-logs');
+    Route::get('websites/{website}/docker-status', [WebsiteController::class, 'dockerStatus'])
+        ->name('websites.docker-status');
+
     // 1-Click App Deployment (Dynamic - supports WordPress, Drupal, etc)
     // Legacy WordPress routes (kept for backwards compatibility)
     Route::get('websites/{website}/wordpress', [WordPressDeploymentController::class, 'show'])

@@ -2,12 +2,12 @@
 
 @section('title', 'Websites - Hostiqo')
 @section('page-title', 'Websites')
-@section('page-description', 'Manage PHP and Node.js website configurations')
+@section('page-description', 'Manage PHP, Node.js, and Docker project configurations')
 
 @section('page-actions')
     @if($type !== 'deployment')
         <a href="{{ route('websites.create', ['type' => $type]) }}" class="btn btn-primary">
-            <i class="bi bi-plus-circle me-1"></i> Add {{ ucfirst($type) }} Website
+            <i class="bi bi-plus-circle me-1"></i> Add {{ $type === 'docker' ? 'Docker Project' : ucfirst($type) . ' Website' }}
         </a>
     @endif
 @endsection
@@ -22,6 +22,10 @@
         <a href="{{ route('websites.index', ['type' => 'node']) }}"
            class="tab-btn text-decoration-none {{ $type === 'node' ? 'active' : '' }}">
             <i class="bi bi-hexagon me-1"></i> Node Projects
+        </a>
+        <a href="{{ route('websites.index', ['type' => 'docker']) }}"
+           class="tab-btn text-decoration-none {{ $type === 'docker' ? 'active' : '' }}">
+            <i class="bi bi-box-seam me-1"></i> Docker Projects
         </a>
         <a href="{{ route('websites.index', ['type' => 'deployment']) }}"
            class="tab-btn text-decoration-none {{ $type === 'deployment' ? 'active' : '' }}">
@@ -121,7 +125,13 @@
                                 <a href="http://{{ $website->domain }}" target="_blank" class="website-domain">
                                     {{ $website->domain }}
                                     <i class="bi bi-box-arrow-up-right" style="font-size: 0.75rem;"></i>
-                                    <span class="badge badge-pastel-purple">PHP {{ $website->php_version }}</span>
+                                    @if($website->project_type === 'php')
+                                        <span class="badge badge-pastel-purple">PHP {{ $website->php_version }}</span>
+                                    @elseif($website->project_type === 'node')
+                                        <span class="badge badge-pastel-green">Node {{ $website->node_version }}</span>
+                                    @elseif($website->project_type === 'docker')
+                                        <span class="badge badge-pastel-blue">Docker</span>
+                                    @endif
                                 </a>
                             </div>
                         </div>
@@ -160,7 +170,12 @@
                         <div class="section-label">CONFIGURATION</div>
                         <div class="info-row">
                             <span class="info-label"><i class="bi bi-code-slash"></i> Type</span>
-                            <span class="info-value">{{ $website->project_type === 'php' ? 'PHP' : 'Node.js' }}</span>
+                            <span class="info-value">
+                                @if($website->project_type === 'php') PHP
+                                @elseif($website->project_type === 'node') Node.js
+                                @elseif($website->project_type === 'docker') Docker
+                                @endif
+                            </span>
                         </div>
                         @if($website->project_type === 'php')
                             <div class="info-row">
@@ -171,7 +186,7 @@
                                 <span class="info-label"><i class="bi bi-layers"></i> FPM Pool</span>
                                 <span class="info-value">{{ $website->php_pool_name ?? 'www' }}</span>
                             </div>
-                        @else
+                        @elseif($website->project_type === 'node')
                             <div class="info-row">
                                 <span class="info-label"><i class="bi bi-hexagon"></i> Node Version</span>
                                 <span class="info-value">{{ $website->node_version ?? '18.x' }}</span>
@@ -180,7 +195,21 @@
                                 <span class="info-label"><i class="bi bi-ethernet"></i> Port</span>
                                 <span class="info-value">{{ $website->port ?? '3000' }}</span>
                             </div>
+                        @elseif($website->project_type === 'docker')
+                            <div class="info-row">
+                                <span class="info-label"><i class="bi bi-box-seam"></i> Template</span>
+                                <span class="info-value">{{ ucfirst($website->docker_template ?? 'Custom') }}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label"><i class="bi bi-images"></i> Image</span>
+                                <span class="info-value">{{ $website->version_display }}</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label"><i class="bi bi-ethernet"></i> Port</span>
+                                <span class="info-value">{{ $website->port ?? '8080' }}</span>
+                            </div>
                         @endif
+                        @if($website->project_type !== 'docker')
                         <div class="info-row">
                             <span class="info-label"><i class="bi bi-folder"></i> Root Path</span>
                             <span class="info-value"><code>{{ $website->root_path }}</code></span>
@@ -189,15 +218,29 @@
                             <span class="info-label"><i class="bi bi-folder-symlink"></i> Working Directory</span>
                             <span class="info-value"><code>{{ $website->working_directory ?? '/' }}</code></span>
                         </div>
+                        @else
+                        <div class="info-row">
+                            <span class="info-label"><i class="bi bi-file-code"></i> Compose Path</span>
+                            <span class="info-value"><code>{{ $website->docker_compose_path ?? 'N/A' }}</code></span>
+                        </div>
+                        @endif
 
                         <!-- Services Section -->
                         <div class="section-label">SERVICES</div>
                         <div class="info-row">
                             <span class="info-label"><i class="bi bi-hexagon"></i> Nginx</span>
                             <span class="badge badge-md badge-pastel-{{ $website->nginx_status === 'active' ? 'green' : ($website->nginx_status === 'pending' ? 'yellow' : 'red') }}">
-                                {{ ucfirst($website->nginx_status) }}
+                                {{ ucfirst($website->nginx_status ?? 'active') }}
                             </span>
                         </div>
+                        @if($website->project_type === 'docker')
+                            <div class="info-row">
+                                <span class="info-label"><i class="bi bi-box-seam"></i> Docker</span>
+                                <span class="badge badge-md badge-pastel-{{ $website->docker_status === 'running' ? 'green' : ($website->docker_status === 'pending' ? 'yellow' : ($website->docker_status === 'stopped' ? 'gray' : 'red')) }}">
+                                    {{ ucfirst($website->docker_status ?? 'unknown') }}
+                                </span>
+                            </div>
+                        @endif
                         @if($website->ssl_enabled)
                             <div class="info-row">
                                 <span class="info-label"><i class="bi bi-shield-lock"></i> SSL/TLS</span>

@@ -1,8 +1,8 @@
 @extends('layouts.app')
 
 @section('title', 'Add Website - Hostiqo')
-@section('page-title', 'Add New ' . ucfirst($type) . ' Website')
-@section('page-description', 'Configure a new ' . $type . ' virtual host')
+@section('page-title', 'Add New ' . ($type === 'docker' ? 'Docker Project' : ucfirst($type) . ' Website'))
+@section('page-description', 'Configure a new ' . ($type === 'docker' ? 'Docker containerized application' : $type . ' virtual host'))
 
 @section('page-actions')
     <a href="{{ route('websites.index', ['type' => $type]) }}" class="btn btn-outline-secondary">
@@ -15,6 +15,14 @@
         <div class="alert alert-warning alert-dismissible fade show" role="alert">
             <strong><i class="bi bi-exclamation-triangle me-1"></i>Development Mode:</strong>
             Configurations will be saved to <code>storage/server/</code> instead of system directories.
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    @endif
+
+    @if($type === 'docker')
+        <div class="alert alert-info alert-dismissible fade show" role="alert">
+            <strong><i class="bi bi-info-circle me-1"></i>Docker Projects:</strong>
+            Docker projects run in isolated containers with docker-compose. Each project includes its own database and services.
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
     @endif
@@ -76,6 +84,7 @@
                         <i class="bi bi-folder me-2"></i> Path Configuration
                     </div>
                     <div class="card-body">
+                        @if($type !== 'docker')
                         <div class="mb-3">
                             <label for="root_path" class="form-label">
                                 Website Root Path
@@ -93,6 +102,7 @@
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
                         </div>
+                        @endif
 
                         <!-- Working Directory / Run Opt -->
                         @if($type === 'php')
@@ -116,7 +126,7 @@
                                     <div class="invalid-feedback">{{ $message }}</div>
                                 @enderror
                             </div>
-                        @else
+                        @elseif($type === 'node')
                             <div class="mb-3">
                                 <label for="working_directory" class="form-label">
                                     Run opt
@@ -138,6 +148,7 @@
                     </div>
                 </div>
 
+                @if($type !== 'docker')
                 <div class="card">
                     <div class="card-header">
                         <i class="bi bi-code-slash me-2"></i> @if($type === 'php') PHP @else Node.js @endif Configuration
@@ -212,6 +223,129 @@
                         @endif
                     </div>
                 </div>
+                @else
+                <!-- Docker Template Selection -->
+                <div class="card">
+                    <div class="card-header">
+                        <i class="bi bi-box-seam me-2"></i> Docker Template
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="docker_template" class="form-label">
+                                Select Template <span class="text-danger">*</span>
+                            </label>
+                            <select
+                                class="form-select @error('docker_template') is-invalid @enderror"
+                                id="docker_template"
+                                name="docker_template"
+                                required
+                            >
+                                <option value="">-- Select Docker Template --</option>
+                                <option value="affine" {{ old('docker_template') === 'affine' ? 'selected' : '' }}>
+                                    AFFiNE - Knowledge Base / Notion Alternative
+                                </option>
+                                <option value="wordpress" {{ old('docker_template') === 'wordpress' ? 'selected' : '' }}>
+                                    WordPress - CMS with MySQL
+                                </option>
+                                <option value="nextcloud" {{ old('docker_template') === 'nextcloud' ? 'selected' : '' }}>
+                                    Nextcloud - Self-hosted File Sync & Share
+                                </option>
+                                <option value="vaultwarden" {{ old('docker_template') === 'vaultwarden' ? 'selected' : '' }}>
+                                    Vaultwarden - Password Manager
+                                </option>
+                                <option value="gitea" {{ old('docker_template') === 'gitea' ? 'selected' : '' }}>
+                                    Gitea - Self-hosted Git Service
+                                </option>
+                                <option value="uptime-kuma" {{ old('docker_template') === 'uptime-kuma' ? 'selected' : '' }}>
+                                    Uptime Kuma - Monitoring Tool
+                                </option>
+                            </select>
+                            <div class="form-text">Choose a pre-configured Docker template</div>
+                            @error('docker_template')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+
+                        <!-- Port -->
+                        <div class="mb-3">
+                            <label for="port" class="form-label">
+                                Port
+                            </label>
+                            <input
+                                type="number"
+                                class="form-control @error('port') is-invalid @enderror"
+                                id="port"
+                                name="port"
+                                value="{{ old('port') }}"
+                                placeholder="Auto-assigned based on template"
+                                min="1"
+                                max="65535"
+                            >
+                            <div class="form-text">Leave empty to use template default port</div>
+                            @error('port')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Docker Environment Variables -->
+                <div class="card">
+                    <div class="card-header">
+                        <i class="bi bi-gear me-2"></i> Environment Configuration
+                    </div>
+                    <div class="card-body">
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle me-1"></i>
+                            Default database credentials will be generated. You can change them after creation.
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="db_password" class="form-label">
+                                Database Password
+                            </label>
+                            <input
+                                type="password"
+                                class="form-control @error('docker_env.DB_PASSWORD') is-invalid @enderror"
+                                id="db_password"
+                                name="docker_env[DB_PASSWORD]"
+                                value="{{ old('docker_env.DB_PASSWORD') }}"
+                                placeholder="Auto-generated secure password"
+                                autocomplete="new-password"
+                            >
+                            <div class="form-text">Leave empty to auto-generate a secure password</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="db_user" class="form-label">
+                                Database Username
+                            </label>
+                            <input
+                                type="text"
+                                class="form-control @error('docker_env.DB_USERNAME') is-invalid @enderror"
+                                id="db_user"
+                                name="docker_env[DB_USERNAME]"
+                                value="{{ old('docker_env.DB_USERNAME', 'affine') }}"
+                                placeholder="affine"
+                            >
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="db_database" class="form-label">
+                                Database Name
+                            </label>
+                            <input
+                                type="text"
+                                class="form-control @error('docker_env.DB_DATABASE') is-invalid @enderror"
+                                id="db_database"
+                                name="docker_env[DB_DATABASE]"
+                                value="{{ old('docker_env.DB_DATABASE', 'affine') }}"
+                                placeholder="affine"
+                            >
+                        </div>
+                    </div>
+                </div>
+                @endif
 
                 <div class="card">
                     <div class="card-header">
@@ -332,16 +466,30 @@
 
                         <h6 class="mt-3">PHP-FPM Pool</h6>
                         <p class="small">Each website gets its own PHP-FPM pool for better resource isolation and performance.</p>
-                    @else
+                    @elseif($type === 'node')
                         <h6>Node.js Applications</h6>
                         <p class="small">Nginx will act as a reverse proxy to your Node.js application running on the specified port.</p>
 
                         <h6 class="mt-3">PM2 Process Manager</h6>
                         <p class="small">Your Node.js app will be managed by PM2 for auto-restart, logging, and monitoring.</p>
+                    @else
+                        <h6>Docker Projects</h6>
+                        <p class="small">Docker projects run in isolated containers with docker-compose. Each template includes all required services.</p>
+
+                        <h6 class="mt-3">AFFiNE Template</h6>
+                        <p class="small">Includes AFFiNE server, PostgreSQL with pgvector, and Redis cache. Port 3010 by default.</p>
+
+                        <h6 class="mt-3">Container Management</h6>
+                        <p class="small">After creation, you can start/stop/restart containers from the project detail page.</p>
                     @endif
 
+                    @if($type !== 'docker')
                     <h6 class="mt-3">Auto-Generated Paths</h6>
                     <p class="small">If you leave the root path empty, it will be auto-generated as <code>/var/www/domain_name</code></p>
+                    @else
+                    <h6 class="mt-3">Storage Location</h6>
+                    <p class="small">Docker projects are stored in <code>/home/docker/projects/{project_name}</code></p>
+                    @endif
 
                     <h6 class="mt-3">SSL Certificate</h6>
                     <p class="small">Enable SSL during creation or later. Let's Encrypt certificates are automatically renewed every 90 days.</p>

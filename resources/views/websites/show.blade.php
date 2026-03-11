@@ -2,7 +2,7 @@
 
 @section('title', $website->name . ' - Hostiqo')
 @section('page-title', $website->name)
-@section('page-description', ucfirst($website->project_type) . ' Website Details')
+@section('page-description', ($website->project_type === 'docker' ? 'Docker Project Details' : ucfirst($website->project_type) . ' Website Details'))
 
 @section('page-actions')
     <a href="{{ route('websites.index', ['type' => $website->project_type]) }}" class="btn btn-outline-secondary">
@@ -55,8 +55,8 @@
                             Project Type
                         </div>
                         <div class="col-md-8">
-                            <span class="badge badge-pastel-{{ $website->project_type == "php" ? 'purple' : 'green'; }}">
-                                {{ $website->project_type === 'php' ? 'PHP' : 'Node.js' }}
+                            <span class="badge badge-pastel-{{ $website->project_type == "php" ? 'purple' : ($website->project_type == "node" ? 'green' : 'blue') }}">
+                                {{ $website->project_type === 'php' ? 'PHP' : ($website->project_type === 'node' ? 'Node.js' : 'Docker') }}
                             </span>
                         </div>
                     </div>
@@ -157,8 +157,76 @@
                         </div>
                     @endif
 
+                    @if($website->project_type === 'docker')
+                        <div class="row mb-3">
+                            <div class="col-md-4">
+                                Docker Status
+                            </div>
+                            <div class="col-md-8">
+                                <span class="badge bg-{{ $website->docker_status_badge }}">
+                                    {{ ucfirst($website->docker_status ?? 'Unknown') }}
+                                </span>
+                            </div>
+                        </div>
+                    @endif
+
                     <hr class="my-4">
 
+                    @if($website->project_type === 'docker')
+                    <!-- Docker Configuration -->
+                    <h5 class="card-title mb-3"><i class="bi bi-box-seam"></i> Docker Configuration</h5>
+
+                    <div class="row mb-2 align-items-center">
+                        <div class="col-md-4">
+                            Template
+                        </div>
+                        <div class="col-md-8">
+                            <span class="badge badge-pastel-blue">{{ ucfirst($website->docker_template ?? 'Custom') }}</span>
+                        </div>
+                    </div>
+
+                    <div class="row mb-2 align-items-center">
+                        <div class="col-md-4">
+                            Image
+                        </div>
+                        <div class="col-md-8">
+                            <code>{{ $website->version_display }}</code>
+                        </div>
+                    </div>
+
+                    <div class="row mb-2 align-items-center">
+                        <div class="col-md-4">
+                            Port
+                        </div>
+                        <div class="col-md-8">
+                            <code>{{ $website->port ?? 'Default' }}</code>
+                        </div>
+                    </div>
+
+                    <div class="row mb-2 align-items-center">
+                        <div class="col-md-4">
+                            Compose Path
+                        </div>
+                        <div class="col-md-8">
+                            <code>{{ $website->docker_compose_path ?? 'N/A' }}</code>
+                        </div>
+                    </div>
+
+                    @if(!empty($website->docker_env))
+                    <hr class="my-3">
+                    <h6 class="mb-3">Environment Variables</h6>
+                    @foreach($website->docker_env as $key => $value)
+                    <div class="row mb-2">
+                        <div class="col-md-4">
+                            <code>{{ $key }}</code>
+                        </div>
+                        <div class="col-md-8">
+                            <code class="text-muted">@if($key === 'DB_PASSWORD') ******** @else {{ $value }} @endif</code>
+                        </div>
+                    </div>
+                    @endforeach
+                    @endif
+                    @else
                     <!-- Path Configuration -->
                     <h5 class="card-title mb-3"><i class="bi bi-terminal"></i> Path Configuration</h5>
 
@@ -189,6 +257,7 @@
                                 {{ $website->port }}
                             </div>
                         </div>
+                    @endif
                     @endif
                 </div>
             </div>
@@ -395,6 +464,69 @@
                     </div>
                 </div>
             @endif
+
+            @if($website->project_type === 'docker')
+                <!-- Docker Container Control -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="bi bi-box-seam me-2"></i>Docker Container Control
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row align-items-center">
+                            <div class="col-md-6">
+                                <p class="mb-2">
+                                    <strong>Template:</strong> <span class="badge badge-pastel-blue">{{ ucfirst($website->docker_template ?? 'Custom') }}</span>
+                                </p>
+                                <p class="mb-2">
+                                    <strong>Compose File:</strong> <code>{{ $website->docker_compose_path ?? 'N/A' }}</code>
+                                </p>
+                                <p class="mb-0">
+                                    <strong>Current Status:</strong>
+                                    <span class="badge bg-{{ $website->docker_status_badge }} ms-2">
+                                        {{ ucfirst($website->docker_status ?? 'Unknown') }}
+                                    </span>
+                                </p>
+                            </div>
+                            <div class="col-md-6 text-end">
+                                <div class="btn-group" role="group">
+                                    <form action="{{ route('websites.docker-start', $website) }}" method="POST" class="d-inline">
+                                        @csrf
+                                        <button type="submit" class="btn btn-success" title="Start Docker containers">
+                                            <i class="bi bi-play-circle me-1"></i> Start
+                                        </button>
+                                    </form>
+                                    <form action="{{ route('websites.docker-restart', $website) }}" method="POST" class="d-inline">
+                                        @csrf
+                                        <button type="submit" class="btn btn-warning" title="Restart Docker containers">
+                                            <i class="bi bi-arrow-clockwise me-1"></i> Restart
+                                        </button>
+                                    </form>
+                                    <form action="{{ route('websites.docker-stop', $website) }}" method="POST" class="d-inline">
+                                        @csrf
+                                        <button type="submit" class="btn btn-danger" title="Stop Docker containers">
+                                            <i class="bi bi-stop-circle me-1"></i> Stop
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                        <hr class="my-3">
+                        <div class="d-flex gap-2">
+                            <form action="{{ route('websites.docker-pull', $website) }}" method="POST" class="d-inline">
+                                @csrf
+                                <button type="submit" class="btn btn-outline-primary">
+                                    <i class="bi bi-download me-1"></i> Pull Latest Images
+                                </button>
+                            </form>
+                            <button type="button" class="btn btn-outline-secondary" onclick="showDockerLogs()">
+                                <i class="bi bi-file-text me-1"></i> View Logs
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            @endif
         </div>
 
         <div class="col-lg-4">
@@ -461,9 +593,12 @@
                     @if($website->project_type === 'php')
                         <h6>PHP Website</h6>
                         <p class="small">This website uses PHP {{ $website->php_version ?? 'System Default' }} with its own PHP-FPM pool for isolated resource management.</p>
-                    @else
+                    @elseif($website->project_type === 'node')
                         <h6>Node.js Application</h6>
                         <p class="small">This Node.js app runs on port {{ $website->port }} and is managed by PM2 for automatic restarts and monitoring.</p>
+                    @else
+                        <h6>Docker Project</h6>
+                        <p class="small">This Docker project uses the <strong>{{ ucfirst($website->docker_template ?? 'Custom') }}</strong> template. Containers are managed via docker-compose.</p>
                     @endif
 
                     <h6 class="mt-3">SSL Certificate</h6>
@@ -474,8 +609,13 @@
                         <p class="small">@if($website->dns_status === 'active')DNS A record is synced pointing to {{ $website->server_ip }}.@else Click "Sync DNS" to create/update the DNS A record in Cloudflare.@endif</p>
                     @endif
 
-                    <h6 class="mt-3">Redeploy</h6>
-                    <p class="small">Use "Redeploy Config" if you've manually changed files or need to regenerate Nginx/PHP-FPM configurations.</p>
+                    @if($website->project_type === 'docker')
+                        <h6 class="mt-3">Container Management</h6>
+                        <p class="small">Use Start, Restart, or Stop buttons to control containers. Pull Latest Images updates to the newest version.</p>
+                    @else
+                        <h6 class="mt-3">Redeploy</h6>
+                        <p class="small">Use "Redeploy Config" if you've manually changed files or need to regenerate Nginx/PHP-FPM configurations.</p>
+                    @endif
 
                     @if($website->project_type === 'node')
                         <h6 class="mt-3">PM2 Management</h6>
@@ -485,7 +625,8 @@
                     <h6 class="mt-3">Configuration Files</h6>
                     <p class="small">Nginx: <code>/etc/nginx/sites-available/{{ $website->domain }}</code><br>
                     @if($website->project_type === 'php')PHP-FPM: <code>/etc/php/{{ $website->php_version }}/fpm/pool.d/{{ str_replace('.', '-', $website->domain) }}.conf</code>@endif
-                    @if($website->project_type === 'node')PM2: <code>/etc/pm2/ecosystem.{{ str_replace('.', '-', $website->domain) }}.config.js</code>@endif</p>
+                    @if($website->project_type === 'node')PM2: <code>/etc/pm2/ecosystem.{{ str_replace('.', '-', $website->domain) }}.config.js</code>@endif
+                    @if($website->project_type === 'docker')Docker Compose: <code>{{ $website->docker_compose_path ?? 'N/A' }}</code>@endif</p>
                 </div>
             </div>
         </div>
@@ -505,7 +646,11 @@
                 </div>
                 <div class="modal-body">
                     <p>Are you sure you want to delete <strong>{{ $website->name }}</strong>?</p>
-                    <p class="text-muted small">This will only remove the configuration from the database. The actual files and directories will not be deleted.</p>
+                    @if($website->project_type === 'docker')
+                        <p class="text-danger small"><i class="bi bi-exclamation-triangle me-1"></i><strong>Warning:</strong> This will stop and remove all Docker containers and delete all data volumes for this project.</p>
+                    @else
+                        <p class="text-muted small">This will only remove the configuration from the database. The actual files and directories will not be deleted.</p>
+                    @endif
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -551,5 +696,28 @@
             }
         });
     }
+
+    @if($website->project_type === 'docker')
+    function showDockerLogs() {
+        Swal.fire({
+            title: 'Docker Container Logs',
+            html: '<pre id="docker-logs" class="text-start" style="max-height: 400px; overflow-y: auto; font-size: 0.8rem;">Loading logs...</pre>',
+            width: '80%',
+            showConfirmButton: false,
+            showCancelButton: true,
+            cancelButtonText: 'Close',
+            didOpen: () => {
+                fetch('{{ route('websites.docker-logs', $website) }}')
+                    .then(response => response.text())
+                    .then(data => {
+                        document.getElementById('docker-logs').textContent = data || 'No logs available.';
+                    })
+                    .catch(error => {
+                        document.getElementById('docker-logs').textContent = 'Error loading logs: ' + error.message;
+                    });
+            }
+        });
+    }
+    @endif
 </script>
 @endpush
