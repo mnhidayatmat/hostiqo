@@ -46,6 +46,60 @@
                                 Active (Enable webhook to receive deployment triggers)
                             </label>
                         </div>
+
+                        <div class="mb-3">
+                            <label for="project_type" class="form-label">Project Type</label>
+                            <select class="form-select @error('project_type') is-invalid @enderror" id="project_type" name="project_type" required onchange="toggleDockerFields()">
+                                <option value="php" selected>PHP</option>
+                                <option value="node">Node.js</option>
+                                <option value="docker">Docker</option>
+                            </select>
+                            @error('project_type')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card" id="docker-config-card" style="display: none;">
+                    <div class="card-header">
+                        <i class="bi bi-box-seam me-2"></i> Docker Configuration
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="docker_action" class="form-label">Docker Action</label>
+                            <select class="form-select @error('docker_action') is-invalid @enderror" id="docker_action" name="docker_action">
+                                <option value="restart" selected>Restart Only</option>
+                                <option value="build">Build Image</option>
+                                <option value="pull">Pull Image</option>
+                            </select>
+                            <div class="form-text">
+                                <strong>Restart Only:</strong> Just restart containers (fastest)<br>
+                                <strong>Build Image:</strong> Rebuild Docker image from Dockerfile<br>
+                                <strong>Pull Image:</strong> Pull latest image from registry
+                            </div>
+                            @error('docker_action')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+
+                        <div class="mb-3" id="docker_image_name_field" style="display: none;">
+                            <label for="docker_image_name" class="form-label">Docker Image Name</label>
+                            <input type="text" class="form-control @error('docker_image_name') is-invalid @enderror" id="docker_image_name" name="docker_image_name" value="{{ old('docker_image_name') }}" placeholder="myregistry.com/myimage:latest">
+                            <div class="form-text">Required when using "Pull Image" action. Example: <code>ghcr.io/username/myapp:latest</code></div>
+                            @error('docker_image_name')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="docker_compose_path" class="form-label">Docker Compose Path</label>
+                            <input type="text" class="form-control @error('docker_compose_path') is-invalid @enderror" id="docker_compose_path" name="docker_compose_path" value="{{ old('docker_compose_path') }}" placeholder="/var/www/myapp/docker-compose.yml">
+                            <div class="form-text">Path to docker-compose.yml file. Leave empty to use <code>{local_path}/docker-compose.yml</code></div>
+                            @error('docker_compose_path')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
                     </div>
                 </div>
 
@@ -243,6 +297,26 @@ $(function() {
             manuallyEdited = false;
         }
     });
+
+    // Docker action change handler
+    $('#docker_action').on('change', function() {
+        if ($(this).val() === 'pull') {
+            $('#docker_image_name_field').show();
+        } else {
+            $('#docker_image_name_field').hide();
+        }
+    });
 });
+
+function toggleDockerFields() {
+    const projectType = document.getElementById('project_type').value;
+    const dockerCard = document.getElementById('docker-config-card');
+
+    if (projectType === 'docker') {
+        dockerCard.style.display = 'block';
+    } else {
+        dockerCard.style.display = 'none';
+    }
+}
 </script>
 @endpush

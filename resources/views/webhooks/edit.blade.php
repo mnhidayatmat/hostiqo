@@ -45,6 +45,60 @@
                                 Active
                             </label>
                         </div>
+
+                        <div class="mb-3">
+                            <label for="project_type" class="form-label">Project Type</label>
+                            <select class="form-select @error('project_type') is-invalid @enderror" id="project_type" name="project_type" required onchange="toggleDockerFields()">
+                                <option value="php" {{ old('project_type', $webhook->project_type ?? 'php') === 'php' ? 'selected' : '' }}>PHP</option>
+                                <option value="node" {{ old('project_type', $webhook->project_type ?? 'php') === 'node' ? 'selected' : '' }}>Node.js</option>
+                                <option value="docker" {{ old('project_type', $webhook->project_type ?? 'php') === 'docker' ? 'selected' : '' }}>Docker</option>
+                            </select>
+                            @error('project_type')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card" id="docker-config-card" style="display: {{ old('project_type', $webhook->project_type ?? 'php') === 'docker' ? 'block' : 'none' }};">
+                    <div class="card-header">
+                        <i class="bi bi-box-seam me-2"></i> Docker Configuration
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="docker_action" class="form-label">Docker Action</label>
+                            <select class="form-select @error('docker_action') is-invalid @enderror" id="docker_action" name="docker_action">
+                                <option value="restart" {{ old('docker_action', $webhook->docker_action ?? 'restart') === 'restart' ? 'selected' : '' }}>Restart Only</option>
+                                <option value="build" {{ old('docker_action', $webhook->docker_action ?? 'restart') === 'build' ? 'selected' : '' }}>Build Image</option>
+                                <option value="pull" {{ old('docker_action', $webhook->docker_action ?? 'restart') === 'pull' ? 'selected' : '' }}>Pull Image</option>
+                            </select>
+                            <div class="form-text">
+                                <strong>Restart Only:</strong> Just restart containers (fastest)<br>
+                                <strong>Build Image:</strong> Rebuild Docker image from Dockerfile<br>
+                                <strong>Pull Image:</strong> Pull latest image from registry
+                            </div>
+                            @error('docker_action')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+
+                        <div class="mb-3" id="docker_image_name_field" style="display: {{ old('docker_action', $webhook->docker_action ?? 'restart') === 'pull' ? 'block' : 'none' }};">
+                            <label for="docker_image_name" class="form-label">Docker Image Name</label>
+                            <input type="text" class="form-control @error('docker_image_name') is-invalid @enderror" id="docker_image_name" name="docker_image_name" value="{{ old('docker_image_name', $webhook->docker_image_name) }}" placeholder="myregistry.com/myimage:latest">
+                            <div class="form-text">Required when using "Pull Image" action. Example: <code>ghcr.io/username/myapp:latest</code></div>
+                            @error('docker_image_name')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="docker_compose_path" class="form-label">Docker Compose Path</label>
+                            <input type="text" class="form-control @error('docker_compose_path') is-invalid @enderror" id="docker_compose_path" name="docker_compose_path" value="{{ old('docker_compose_path', $webhook->docker_compose_path) }}" placeholder="{{ $webhook->local_path }}/docker-compose.yml">
+                            <div class="form-text">Path to docker-compose.yml file. Leave empty to use <code>{local_path}/docker-compose.yml</code></div>
+                            @error('docker_compose_path')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
                     </div>
                 </div>
 
@@ -179,3 +233,33 @@
         </div>
     </div>
 @endsection
+
+@push('scripts')
+<script>
+function toggleDockerFields() {
+    const projectType = document.getElementById('project_type').value;
+    const dockerCard = document.getElementById('docker-config-card');
+
+    if (projectType === 'docker') {
+        dockerCard.style.display = 'block';
+    } else {
+        dockerCard.style.display = 'none';
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const dockerAction = document.getElementById('docker_action');
+    const imageNameField = document.getElementById('docker_image_name_field');
+
+    if (dockerAction) {
+        dockerAction.addEventListener('change', function() {
+            if (this.value === 'pull') {
+                imageNameField.style.display = 'block';
+            } else {
+                imageNameField.style.display = 'none';
+            }
+        });
+    }
+});
+</script>
+@endpush

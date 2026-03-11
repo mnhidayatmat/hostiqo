@@ -29,6 +29,10 @@ class Webhook extends Model
         'pre_deploy_script',
         'post_deploy_script',
         'last_deployed_at',
+        'project_type',
+        'docker_compose_path',
+        'docker_action',
+        'docker_image_name',
     ];
 
     /**

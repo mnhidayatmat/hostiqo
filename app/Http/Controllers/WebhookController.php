@@ -60,6 +60,10 @@ class WebhookController extends Controller
             'pre_deploy_script' => ['nullable', 'string'],
             'post_deploy_script' => ['nullable', 'string'],
             'generate_ssh_key' => ['nullable', 'boolean'],
+            'project_type' => ['nullable', 'string', 'in:php,node,docker'],
+            'docker_compose_path' => ['nullable', 'string', 'max:500'],
+            'docker_action' => ['nullable', 'string', 'in:build,pull,restart'],
+            'docker_image_name' => ['nullable', 'string', 'max:500'],
         ]);
 
         $validated['secret_token'] = Str::random(64);
@@ -123,6 +127,10 @@ class WebhookController extends Controller
             'is_active' => ['nullable', 'boolean'],
             'pre_deploy_script' => ['nullable', 'string'],
             'post_deploy_script' => ['nullable', 'string'],
+            'project_type' => ['nullable', 'string', 'in:php,node,docker'],
+            'docker_compose_path' => ['nullable', 'string', 'max:500'],
+            'docker_action' => ['nullable', 'string', 'in:build,pull,restart'],
+            'docker_image_name' => ['nullable', 'string', 'max:500'],
         ]);
 
         $validated['is_active'] = $request->boolean('is_active');

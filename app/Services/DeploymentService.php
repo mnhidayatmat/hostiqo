@@ -86,6 +86,260 @@ class DeploymentService
      */
     protected function executeDeployment(Webhook $webhook): string
     {
+        // Handle Docker deployments differently
+        if ($webhook->project_type === 'docker') {
+            return $this->executeDockerDeployment($webhook);
+        }
+
+        return $this->executeGitDeployment($webhook);
+    }
+
+    /**
+     * Execute Docker deployment.
+     *
+     * @param Webhook $webhook The webhook to deploy
+     * @return string The deployment output
+     * @throws \Exception If deployment fails
+     */
+    protected function executeDockerDeployment(Webhook $webhook): string
+    {
+        $localPath = $webhook->local_path;
+        $branch = $webhook->branch;
+        $deployUser = $webhook->deploy_user;
+        $dockerAction = $webhook->docker_action ?? 'restart';
+        $composePath = $webhook->docker_compose_path;
+        $imageName = $webhook->docker_image_name;
+        $output = [];
+
+        // Setup SSH key if available
+        $sshKey = $webhook->sshKey;
+        $keyPath = null;
+        $gitSshCommand = '';
+
+        if ($sshKey) {
+            $keyPath = $this->sshKeyService->saveTempPrivateKey($sshKey);
+            $gitSshCommand = "ssh -i {$keyPath} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null";
+        }
+
+        try {
+            $output[] = "=== Docker Deployment ===";
+            $output[] = "Action: {$dockerAction}";
+
+            // Pull code if repository is configured
+            if ($webhook->repository_url) {
+                $output[] = "\n--- Pulling Code from Git ---";
+
+                // Check if directory exists
+                if (File::isDirectory($localPath)) {
+                    // Pull latest changes
+                    $output[] = "Pulling latest changes...";
+
+                    $command = $this->prepareCommandAsUser([
+                        'git', 'fetch', 'origin', $branch
+                    ], $deployUser);
+
+                    $result = Process::path($localPath)
+                        ->env(['GIT_SSH_COMMAND' => $gitSshCommand])
+                        ->run($command);
+
+                    $output[] = $result->output();
+
+                    if ($result->failed()) {
+                        throw new \Exception("Git fetch failed: " . $result->errorOutput());
+                    }
+
+                    // Reset to origin
+                    $command = $this->prepareCommandAsUser([
+                        'git',
+                        'reset',
+                        '--hard',
+                        "origin/{$branch}",
+                    ], $deployUser);
+
+                    $result = Process::path($localPath)->run($command);
+
+                    $output[] = $result->output();
+
+                    if ($result->failed()) {
+                        throw new \Exception("Git reset failed: " . $result->errorOutput());
+                    }
+                } else {
+                    // Clone repository
+                    $output[] = "Cloning repository...";
+                    $command = $this->prepareCommandAsUser([
+                        'git',
+                        'clone',
+                        '-b', $branch,
+                        $webhook->repository_url,
+                        $localPath,
+                    ], $deployUser);
+
+                    $result = Process::env([
+                        'GIT_SSH_COMMAND' => $gitSshCommand,
+                    ])->run($command);
+
+                    $output[] = $result->output();
+
+                    if ($result->failed()) {
+                        throw new \Exception("Git clone failed: " . $result->errorOutput());
+                    }
+                }
+            }
+
+            // Run pre-deploy script
+            if ($webhook->pre_deploy_script) {
+                $output[] = "\n--- Running Pre-Deploy Script ---";
+
+                $normalizedScript = str_replace(["\r\n", "\r"], "\n", $webhook->pre_deploy_script);
+                $cleanedScript = implode("\n", array_map('trim', explode("\n", $normalizedScript)));
+
+                $command = $this->prepareCommandAsUser([
+                    'bash', '-c', $cleanedScript
+                ], $deployUser);
+
+                $result = Process::path($localPath)
+                    ->timeout(300)
+                    ->run($command);
+
+                $output[] = $result->output();
+
+                if ($result->failed()) {
+                    $output[] = "Warning: Pre-deploy script failed: " . $result->errorOutput();
+                }
+            }
+
+            // Docker actions
+            $output[] = "\n--- Docker Deployment ---";
+
+            // Determine compose file path
+            $composeFile = $composePath ?: ($localPath . '/docker-compose.yml');
+
+            if (!File::exists($composeFile)) {
+                throw new \Exception("Docker compose file not found: {$composeFile}");
+            }
+
+            $output[] = "Using compose file: {$composeFile}";
+
+            // Build Docker image if action is 'build'
+            if ($dockerAction === 'build') {
+                $output[] = "\nBuilding Docker image...";
+
+                $command = $this->prepareCommandAsUser([
+                    'docker', 'compose', '-f', $composeFile, 'build'
+                ], $deployUser);
+
+                $result = Process::path($localPath)
+                    ->timeout(600)
+                    ->run($command);
+
+                $output[] = $result->output();
+
+                if ($result->failed()) {
+                    throw new \Exception("Docker build failed: " . $result->errorOutput());
+                }
+            }
+
+            // Pull Docker image if action is 'pull'
+            if ($dockerAction === 'pull' && $imageName) {
+                $output[] = "\nPulling Docker image: {$imageName}";
+
+                $command = $this->prepareCommandAsUser([
+                    'docker', 'pull', $imageName
+                ], $deployUser);
+
+                $result = Process::run($command);
+
+                $output[] = $result->output();
+
+                if ($result->failed()) {
+                    throw new \Exception("Docker pull failed: " . $result->errorOutput());
+                }
+            }
+
+            // Down existing containers
+            $output[] = "\nStopping existing containers...";
+
+            $command = $this->prepareCommandAsUser([
+                'docker', 'compose', '-f', $composeFile, 'down'
+            ], $deployUser);
+
+            $result = Process::path($localPath)
+                ->timeout(120)
+                ->run($command);
+
+            $output[] = $result->output();
+
+            // Start containers
+            $output[] = "\nStarting containers...";
+
+            $command = $this->prepareCommandAsUser([
+                'docker', 'compose', '-f', $composeFile, 'up', '-d', '--build'
+            ], $deployUser);
+
+            $result = Process::path($localPath)
+                ->timeout(300)
+                ->run($command);
+
+            $output[] = $result->output();
+
+            if ($result->failed()) {
+                throw new \Exception("Docker compose up failed: " . $result->errorOutput());
+            }
+
+            // Run post-deploy script
+            if ($webhook->post_deploy_script) {
+                $output[] = "\n--- Running Post-Deploy Script ---";
+
+                $normalizedScript = str_replace(["\r\n", "\r"], "\n", $webhook->post_deploy_script);
+                $cleanedScript = implode("\n", array_map('trim', explode("\n", $normalizedScript)));
+
+                $command = $this->prepareCommandAsUser([
+                    'bash', '-c', $cleanedScript
+                ], $deployUser);
+
+                $homeDir = $deployUser === 'www-data' ? '/var/www' : ('/home/' . $deployUser);
+
+                $result = Process::path($localPath)
+                    ->timeout(300)
+                    ->env([
+                        'HOME' => $homeDir,
+                        'COMPOSER_HOME' => $homeDir . '/.composer',
+                        'PATH' => '/usr/local/bin:/usr/bin:/bin',
+                    ])
+                    ->run($command);
+
+                $output[] = $result->output();
+
+                if ($result->failed()) {
+                    $output[] = "Warning: Post-deploy script failed: " . $result->errorOutput();
+                }
+            }
+
+            // Show running containers
+            $output[] = "\n--- Running Containers ---";
+            $result = Process::run(['docker', 'compose', '-f', $composeFile, 'ps']);
+            $output[] = $result->output();
+
+            $output[] = "\n✓ Docker deployment completed successfully!";
+        } finally {
+            // Clean up temporary key
+            if ($keyPath) {
+                $this->sshKeyService->deleteTempPrivateKey($keyPath);
+            }
+        }
+
+        return implode("\n", $output);
+    }
+
+    /**
+     * Execute Git-based deployment (PHP/Node.js).
+     *
+     * @param Webhook $webhook The webhook to deploy
+     * @return string The deployment output
+     * @throws \Exception If deployment fails
+     */
+    protected function executeGitDeployment(Webhook $webhook): string
+    {
         $localPath = $webhook->local_path;
         $branch = $webhook->branch;
         $deployUser = $webhook->deploy_user;
