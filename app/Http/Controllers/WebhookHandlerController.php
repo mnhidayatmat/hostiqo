@@ -18,9 +18,9 @@ class WebhookHandlerController extends Controller
     /**
      * Handle incoming webhook from git providers.
      */
-    public function handle(Request $request, int $webhook, string $token)
+    public function handle(Request $request, string $webhook, string $token)
     {
-        $webhookModel = Webhook::findOrFail($webhook);
+        $webhookModel = Webhook::findOrFail((int) $webhook);
 
         // Verify secret token
         if ($token !== $webhookModel->secret_token) {
