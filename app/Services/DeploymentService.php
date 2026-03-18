@@ -197,8 +197,11 @@ class DeploymentService
                     'bash', '-c', $cleanedScript
                 ], $deployUser);
 
+                // Use longer timeout for Docker projects (builds can take 10+ min)
+                $scriptTimeout = ($webhook->project_type === 'docker') ? 900 : 300;
+
                 $result = Process::path($localPath)
-                    ->timeout(300)
+                    ->timeout($scriptTimeout)
                     ->run($command);
 
                 $output[] = $result->output();
@@ -272,12 +275,17 @@ class DeploymentService
             // Start containers
             $output[] = "\nStarting containers...";
 
-            $command = $this->prepareCommandAsUser([
-                'docker', 'compose', '-f', $composeFile, 'up', '-d', '--build'
-            ], $deployUser);
+            $upArgs = ['docker', 'compose', '-f', $composeFile, 'up', '-d'];
+
+            // Only add --build if action is 'build' (avoid redundant rebuilds for restart/pull)
+            if ($dockerAction === 'build') {
+                $upArgs[] = '--build';
+            }
+
+            $command = $this->prepareCommandAsUser($upArgs, $deployUser);
 
             $result = Process::path($localPath)
-                ->timeout(300)
+                ->timeout(600)
                 ->run($command);
 
             $output[] = $result->output();
@@ -299,8 +307,10 @@ class DeploymentService
 
                 $homeDir = $deployUser === 'www-data' ? '/var/www' : ('/home/' . $deployUser);
 
+                $postTimeout = ($webhook->project_type === 'docker') ? 900 : 300;
+
                 $result = Process::path($localPath)
-                    ->timeout(300)
+                    ->timeout($postTimeout)
                     ->env([
                         'HOME' => $homeDir,
                         'COMPOSER_HOME' => $homeDir . '/.composer',
