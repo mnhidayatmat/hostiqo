@@ -32,7 +32,7 @@ class SslService
 
             // Build domain list - only add www if www_redirect is configured
             $domains = [$domain];
-            if (in_array($website->www_redirect, ['to_www', 'none'])) {
+            if ($website->www_redirect === 'to_www') {
                 $domains[] = "www.{$domain}";
             }
             
