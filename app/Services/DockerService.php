@@ -79,6 +79,15 @@ class DockerService
             'services' => ['uptime-kuma'],
             'default_port' => 3001,
         ],
+        'n8n' => [
+            'name' => 'n8n',
+            'description' => 'Workflow automation tool - automate without limits',
+            'image' => 'n8nio/n8n',
+            'tag' => 'latest',
+            'compose' => 'n8n',
+            'services' => ['n8n'],
+            'default_port' => 5678,
+        ],
     ];
 
     public function __construct()
@@ -133,6 +142,7 @@ class DockerService
             'vaultwarden' => $this->generateVaultwardenCompose($website, $projectName, $port),
             'gitea' => $this->generateGiteaCompose($website, $projectName, $port),
             'uptime-kuma' => $this->generateUptimeKumaCompose($website, $projectName, $port),
+            'n8n' => $this->generateN8nCompose($website, $projectName, $port),
             default => throw new \InvalidArgumentException("Unknown template: {$template}"),
         };
     }
@@ -416,6 +426,36 @@ YAML;
     }
 
     /**
+     * Generate docker-compose.yml for n8n.
+     */
+    protected function generateN8nCompose(Website $website, string $projectName, int $port): string
+    {
+        $webhookUrl = "https://{$website->domain}/";
+        $genericTimezone = $website->docker_env['GENERIC_TIMEZONE'] ?? 'Asia/Kuala_Lumpur';
+
+        return <<<YAML
+name: {$projectName}
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: {$projectName}_n8n
+    ports:
+      - '{$port}:5678'
+    volumes:
+      - ./n8n-data:/home/node/.n8n
+    environment:
+      - N8N_HOST={$website->domain}
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=https
+      - WEBHOOK_URL={$webhookUrl}
+      - GENERIC_TIMEZONE={$genericTimezone}
+      - TZ={$genericTimezone}
+    restart: unless-stopped
+
+YAML;
+    }
+
+    /**
      * Create docker-compose.yml file for a website.
      *
      * @param Website $website
@@ -485,6 +525,7 @@ YAML;
                 'vaultwarden' => ['vaultwarden'],
                 'gitea' => ['gitea', 'mysql'],
                 'uptime-kuma' => ['uptime-kuma'],
+                'n8n' => ['n8n-data'],
                 default => [],
             };
 

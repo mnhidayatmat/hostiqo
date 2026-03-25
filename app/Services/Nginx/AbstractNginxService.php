@@ -30,7 +30,11 @@ abstract class AbstractNginxService implements NginxInterface
         if ($website->project_type === 'php') {
             return $this->generatePhpConfig($website);
         }
-        
+
+        if ($website->project_type === 'docker') {
+            return $this->generateDockerProxyConfig($website);
+        }
+
         return $this->generateStaticConfig($website);
     }
 
@@ -122,6 +126,64 @@ server {
         expires 30d;
         add_header Cache-Control "public, immutable";
         access_log off;
+    }
+}
+NGINX;
+    }
+
+    /**
+     * Generate reverse proxy configuration for Docker projects.
+     *
+     * @param Website $website The website model
+     * @return string The Docker reverse proxy configuration
+     */
+    protected function generateDockerProxyConfig(Website $website): string
+    {
+        $port = $website->port ?? 8080;
+        $sslConfig = $website->ssl_enabled ? $this->getSslConfig($website->domain) : '';
+        $wwwRedirectConfig = $this->getWwwRedirectConfig($website);
+        $securityHeaders = $this->getSecurityHeaders();
+        $logDir = '/var/log/nginx';
+
+        return <<<NGINX
+server {
+    listen 80;
+    listen [::]:80;
+    server_name {$website->domain} www.{$website->domain};
+
+{$sslConfig}
+{$wwwRedirectConfig}
+
+    # Logging
+    access_log {$logDir}/{$website->domain}-access.log;
+    error_log {$logDir}/{$website->domain}-error.log;
+
+    # Security: Limit request body size
+    client_max_body_size 100M;
+
+{$securityHeaders}
+
+    # Allow Let's Encrypt ACME challenge
+    location ^~ /.well-known/acme-challenge/ {
+        allow all;
+        root /var/www/{$website->domain};
+        try_files \$uri =404;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:{$port};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-Port \$server_port;
+        proxy_buffering off;
+        proxy_cache off;
+        chunked_transfer_encoding off;
     }
 }
 NGINX;

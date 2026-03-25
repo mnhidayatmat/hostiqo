@@ -259,6 +259,9 @@
                                 <option value="uptime-kuma" {{ old('docker_template') === 'uptime-kuma' ? 'selected' : '' }}>
                                     Uptime Kuma - Monitoring Tool
                                 </option>
+                                <option value="n8n" {{ old('docker_template') === 'n8n' ? 'selected' : '' }}>
+                                    n8n - Workflow Automation Tool
+                                </option>
                             </select>
                             <div class="form-text">Choose a pre-configured Docker template</div>
                             @error('docker_template')
