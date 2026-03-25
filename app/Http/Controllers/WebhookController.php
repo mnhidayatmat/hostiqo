@@ -69,6 +69,11 @@ class WebhookController extends Controller
         $validated['secret_token'] = Str::random(64);
         $validated['is_active'] = $request->boolean('is_active');
 
+        // Normalize docker_compose_path: ensure it points to a file, not a directory
+        if (!empty($validated['docker_compose_path']) && !str_ends_with($validated['docker_compose_path'], '.yml') && !str_ends_with($validated['docker_compose_path'], '.yaml')) {
+            $validated['docker_compose_path'] = rtrim($validated['docker_compose_path'], '/') . '/docker-compose.yml';
+        }
+
         $webhook = Webhook::create($validated);
 
         // Generate SSH key if requested
@@ -134,6 +139,11 @@ class WebhookController extends Controller
         ]);
 
         $validated['is_active'] = $request->boolean('is_active');
+
+        // Normalize docker_compose_path: ensure it points to a file, not a directory
+        if (!empty($validated['docker_compose_path']) && !str_ends_with($validated['docker_compose_path'], '.yml') && !str_ends_with($validated['docker_compose_path'], '.yaml')) {
+            $validated['docker_compose_path'] = rtrim($validated['docker_compose_path'], '/') . '/docker-compose.yml';
+        }
 
         $webhook->update($validated);
 

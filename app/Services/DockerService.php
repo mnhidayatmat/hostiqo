@@ -529,6 +529,13 @@ YAML;
                 default => [],
             };
 
+            // Templates that run as non-root user inside container (need UID ownership)
+            $uidOwnership = match($template) {
+                'n8n' => 1000,       // n8n runs as 'node' user (UID 1000)
+                'gitea' => 1000,     // gitea runs as UID 1000
+                default => null,
+            };
+
             foreach ($subdirs as $subdir) {
                 $fullPath = "{$projectDir}/{$subdir}";
                 if ($this->isLocal) {
@@ -538,6 +545,9 @@ YAML;
                 } else {
                     Process::run("sudo /bin/mkdir -p {$fullPath}");
                     Process::run("sudo /bin/chmod 755 {$fullPath}");
+                    if ($uidOwnership) {
+                        Process::run("sudo /bin/chown -R {$uidOwnership}:{$uidOwnership} {$fullPath}");
+                    }
                 }
             }
 

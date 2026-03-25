@@ -18,12 +18,18 @@ class SslService
     {
         try {
             $domain = $website->domain;
-            
-            // Use full path (root_path + working_directory) as webroot
-            $webroot = rtrim($website->root_path, '/') . '/' . ltrim($website->working_directory ?? '/', '/');
+
+            // For Docker projects, use root_path directory for ACME challenge (not the Docker project dir)
+            // For PHP/Node projects, use root_path + working_directory
+            if ($website->project_type === 'docker') {
+                $webroot = $website->root_path;
+            } else {
+                $webroot = rtrim($website->root_path, '/') . '/' . ltrim($website->working_directory ?? '/', '/');
+            }
             $webroot = rtrim($webroot, '/');
 
-            // Ensure .well-known/acme-challenge directory exists with proper permissions
+            // Ensure webroot and .well-known/acme-challenge directory exists with proper permissions
+            Process::run("sudo /bin/mkdir -p {$webroot}");
             $acmeDir = $webroot . '/.well-known/acme-challenge';
             Process::run("sudo /bin/mkdir -p {$acmeDir}");
             Process::run("sudo /bin/chmod 755 {$webroot}/.well-known");

@@ -129,8 +129,17 @@ class DeploymentService
             if ($webhook->repository_url) {
                 $output[] = "\n--- Pulling Code from Git ---";
 
-                // Check if directory exists
-                if (File::isDirectory($localPath)) {
+                // Ensure parent directory exists and is writable
+                $parentDir = dirname($localPath);
+                if (!File::isDirectory($parentDir)) {
+                    Process::run(['sudo', '/bin/mkdir', '-p', $parentDir]);
+                    Process::run(['sudo', '/bin/chmod', '755', $parentDir]);
+                }
+
+                // Check if directory exists and is a git repo
+                $isGitRepo = File::isDirectory($localPath) && File::isDirectory($localPath . '/.git');
+
+                if ($isGitRepo) {
                     // Pull latest changes
                     $output[] = "Pulling latest changes...";
 
@@ -164,24 +173,68 @@ class DeploymentService
                         throw new \Exception("Git reset failed: " . $result->errorOutput());
                     }
                 } else {
-                    // Clone repository
+                    // Directory exists but is not a git repo (e.g. created by DockerService),
+                    // or directory doesn't exist at all — clone into a temp path then merge
                     $output[] = "Cloning repository...";
-                    $command = $this->prepareCommandAsUser([
-                        'git',
-                        'clone',
-                        '-b', $branch,
-                        $webhook->repository_url,
-                        $localPath,
-                    ], $deployUser);
 
-                    $result = Process::env([
-                        'GIT_SSH_COMMAND' => $gitSshCommand,
-                    ])->run($command);
+                    if (File::isDirectory($localPath)) {
+                        // Clone to a temp directory, then copy git files over
+                        $tempClonePath = $localPath . '_git_tmp_' . time();
 
-                    $output[] = $result->output();
+                        $command = $this->prepareCommandAsUser([
+                            'git', 'clone', '-b', $branch,
+                            $webhook->repository_url, $tempClonePath,
+                        ], $deployUser);
 
-                    if ($result->failed()) {
-                        throw new \Exception("Git clone failed: " . $result->errorOutput());
+                        $result = Process::env([
+                            'GIT_SSH_COMMAND' => $gitSshCommand,
+                        ])->run($command);
+
+                        $output[] = $result->output();
+
+                        if ($result->failed()) {
+                            // Clean up temp dir on failure
+                            Process::run(['sudo', '/bin/rm', '-rf', $tempClonePath]);
+                            throw new \Exception("Git clone failed: " . $result->errorOutput());
+                        }
+
+                        // Copy cloned files into existing directory (preserving existing files like docker-compose.yml)
+                        $result = Process::run("sudo /bin/cp -a {$tempClonePath}/. {$localPath}/");
+                        if ($result->failed()) {
+                            Process::run(['sudo', '/bin/rm', '-rf', $tempClonePath]);
+                            throw new \Exception("Failed to merge cloned repo: " . $result->errorOutput());
+                        }
+
+                        // Clean up temp directory
+                        Process::run(['sudo', '/bin/rm', '-rf', $tempClonePath]);
+
+                        if ($deployUser) {
+                            Process::run(['sudo', '/bin/chown', '-R', "{$deployUser}:{$deployUser}", $localPath]);
+                        }
+
+                        $output[] = "Merged cloned repository into existing project directory.";
+                    } else {
+                        // Directory doesn't exist — create parent and clone directly
+                        Process::run(['sudo', '/bin/mkdir', '-p', $localPath]);
+
+                        if ($deployUser) {
+                            Process::run(['sudo', '/bin/chown', '-R', "{$deployUser}:{$deployUser}", $localPath]);
+                        }
+
+                        $command = $this->prepareCommandAsUser([
+                            'git', 'clone', '-b', $branch,
+                            $webhook->repository_url, $localPath,
+                        ], $deployUser);
+
+                        $result = Process::env([
+                            'GIT_SSH_COMMAND' => $gitSshCommand,
+                        ])->run($command);
+
+                        $output[] = $result->output();
+
+                        if ($result->failed()) {
+                            throw new \Exception("Git clone failed: " . $result->errorOutput());
+                        }
                     }
                 }
             }
@@ -216,6 +269,11 @@ class DeploymentService
 
             // Determine compose file path
             $composeFile = $composePath ?: ($localPath . '/docker-compose.yml');
+
+            // If compose path is a directory, append docker-compose.yml
+            if (File::isDirectory($composeFile)) {
+                $composeFile = rtrim($composeFile, '/') . '/docker-compose.yml';
+            }
 
             if (!File::exists($composeFile)) {
                 throw new \Exception("Docker compose file not found: {$composeFile}");
