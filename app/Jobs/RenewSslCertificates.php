@@ -11,6 +11,8 @@ class RenewSslCertificates implements ShouldQueue
 {
     use Queueable;
 
+    public int $timeout = 900;
+
     /**
      * Create a new job instance.
      */
@@ -32,7 +34,7 @@ class RenewSslCertificates implements ShouldQueue
             // --quiet: Only show errors
             // --no-self-upgrade: Don't upgrade certbot itself
             // --deploy-hook: Reload Nginx after successful renewal
-            $result = Process::run(
+            $result = Process::timeout(840)->run(
                 'sudo certbot renew --quiet --no-self-upgrade --deploy-hook "sudo systemctl reload nginx"'
             );
 
