@@ -262,6 +262,9 @@
                                 <option value="n8n" {{ old('docker_template') === 'n8n' ? 'selected' : '' }}>
                                     n8n - Workflow Automation Tool
                                 </option>
+                                <option value="appflowy" {{ old('docker_template') === 'appflowy' ? 'selected' : '' }}>
+                                    AppFlowy - AI Workspace / Notion Alternative
+                                </option>
                             </select>
                             <div class="form-text">Choose a pre-configured Docker template</div>
                             @error('docker_template')
@@ -345,6 +348,39 @@
                                 value="{{ old('docker_env.DB_DATABASE', 'affine') }}"
                                 placeholder="affine"
                             >
+                        </div>
+
+                        {{-- AppFlowy-only options. Ignored by other templates. --}}
+                        <div class="mb-3">
+                            <label for="appflowy_openai_key" class="form-label">
+                                OpenAI API Key <span class="text-muted">(AppFlowy AI)</span>
+                            </label>
+                            <input
+                                type="password"
+                                class="form-control @error('docker_env.AI_OPENAI_API_KEY') is-invalid @enderror"
+                                id="appflowy_openai_key"
+                                name="docker_env[AI_OPENAI_API_KEY]"
+                                value="{{ old('docker_env.AI_OPENAI_API_KEY') }}"
+                                placeholder="sk-... (required for AppFlowy AI features)"
+                                autocomplete="off"
+                            >
+                            <div class="form-text">Only used by the AppFlowy template. Leave empty to run AppFlowy without AI features.</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="appflowy_admin_email" class="form-label">
+                                Admin Email <span class="text-muted">(AppFlowy)</span>
+                            </label>
+                            <input
+                                type="email"
+                                class="form-control @error('docker_env.GOTRUE_ADMIN_EMAIL') is-invalid @enderror"
+                                id="appflowy_admin_email"
+                                name="docker_env[GOTRUE_ADMIN_EMAIL]"
+                                value="{{ old('docker_env.GOTRUE_ADMIN_EMAIL') }}"
+                                placeholder="admin@yourdomain.com"
+                                autocomplete="off"
+                            >
+                            <div class="form-text">Only used by the AppFlowy template. Leave empty to auto-generate (admin@your-domain).</div>
                         </div>
                     </div>
                 </div>

@@ -88,6 +88,22 @@ class DockerService
             'services' => ['n8n'],
             'default_port' => 5678,
         ],
+        'appflowy' => [
+            'name' => 'AppFlowy',
+            'description' => 'Open-source AI workspace - the Notion alternative (self-hosted AppFlowy Cloud)',
+            'image' => 'appflowyinc/appflowy_cloud',
+            'tag' => 'latest',
+            'compose' => 'appflowy',
+            // AppFlowy ships its own internal nginx that path-routes to every
+            // backend, so hostiqo's outer proxy only needs to target the nginx
+            // service. All other services stay on the internal compose network.
+            'services' => [
+                'nginx', 'postgres', 'redis', 'minio', 'gotrue',
+                'appflowy_cloud', 'admin_frontend', 'appflowy_web',
+                'ai', 'appflowy_search', 'appflowy_worker',
+            ],
+            'default_port' => 8083,
+        ],
     ];
 
     public function __construct()
@@ -143,6 +159,7 @@ class DockerService
             'gitea' => $this->generateGiteaCompose($website, $projectName, $port),
             'uptime-kuma' => $this->generateUptimeKumaCompose($website, $projectName, $port),
             'n8n' => $this->generateN8nCompose($website, $projectName, $port),
+            'appflowy' => $this->generateAppFlowyCompose($website, $projectName, $port),
             default => throw new \InvalidArgumentException("Unknown template: {$template}"),
         };
     }
@@ -456,6 +473,496 @@ YAML;
     }
 
     /**
+     * Derive a stable, per-site secret. Stable across regenerations (so the
+     * postgres password / JWT secret never change out from under existing
+     * containers) yet unique per domain. Overridable via docker_env.
+     */
+    protected function appflowySecret(Website $website, string $purpose, int $length = 32): string
+    {
+        return substr(hash('sha256', $purpose . '|' . $website->domain . '|' . config('app.key')), 0, $length);
+    }
+
+    /**
+     * Generate docker-compose.yml for AppFlowy (self-hosted AppFlowy Cloud).
+     *
+     * This is a multi-service stack. AppFlowy's own nginx container terminates
+     * the internal path routing (/, /ws, /gotrue, /api, /minio-api, /console, ...)
+     * and is the single entrypoint that hostiqo's outer per-domain nginx proxies
+     * to. TLS is handled by the outer nginx, so the internal nginx is HTTP-only.
+     * The internal nginx.conf is written separately via getTemplateExtraFiles().
+     */
+    protected function generateAppFlowyCompose(Website $website, string $projectName, int $port): string
+    {
+        $env = $website->docker_env ?? [];
+
+        // Public-facing URLs. hostiqo terminates TLS, so the public scheme is https/wss.
+        $domain = $website->domain;
+        $baseUrl = "https://{$domain}";
+        $wsBaseUrl = "wss://{$domain}/ws/v2";
+        $apiExternalUrl = "{$baseUrl}/gotrue";
+        $presignedEndpoint = "{$baseUrl}/minio-api";
+
+        // Credentials & secrets (overridable via docker_env, otherwise derived & stable).
+        $pgUser = $env['DB_USERNAME'] ?? 'postgres';
+        $pgPass = $env['DB_PASSWORD'] ?? $this->appflowySecret($website, 'postgres', 24);
+        $pgDb = $env['DB_DATABASE'] ?? 'postgres';
+        $jwtSecret = $env['GOTRUE_JWT_SECRET'] ?? $this->appflowySecret($website, 'jwt', 48);
+        $adminEmail = $env['GOTRUE_ADMIN_EMAIL'] ?? "admin@{$domain}";
+        $adminPass = $env['GOTRUE_ADMIN_PASSWORD'] ?? $this->appflowySecret($website, 'gotrue-admin', 20);
+        $minioKey = $env['AWS_ACCESS_KEY'] ?? $this->appflowySecret($website, 'minio-key', 20);
+        $minioSecret = $env['AWS_SECRET'] ?? $this->appflowySecret($website, 'minio-secret', 32);
+        $openaiKey = $env['AI_OPENAI_API_KEY'] ?? '';
+
+        // Optional SMTP. With autoconfirm enabled, signup works without email.
+        $smtpHost = $env['SMTP_HOST'] ?? '';
+        $smtpPort = $env['SMTP_PORT'] ?? '465';
+        $smtpUser = $env['SMTP_USER'] ?? '';
+        $smtpPass = $env['SMTP_PASS'] ?? '';
+        $smtpEmail = $env['SMTP_EMAIL'] ?? $smtpUser;
+
+        // Internal connection strings (resolved over the compose network).
+        $dbUrl = "postgres://{$pgUser}:{$pgPass}@postgres:5432/{$pgDb}";
+        $gotrueDbUrl = "{$dbUrl}?search_path=auth";
+        $redisUri = 'redis://redis:6379';
+        $minioUrl = 'http://minio:9000';
+
+        return <<<YAML
+name: {$projectName}
+services:
+  nginx:
+    image: nginx:latest
+    container_name: {$projectName}_nginx
+    restart: unless-stopped
+    ports:
+      - '{$port}:80'
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - appflowy_cloud
+      - appflowy_web
+      - gotrue
+      - minio
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: {$projectName}_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: {$pgUser}
+      POSTGRES_PASSWORD: {$pgPass}
+      POSTGRES_DB: {$pgDb}
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - ./postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD', 'pg_isready', '-U', '{$pgUser}', '-d', '{$pgDb}']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:latest
+    container_name: {$projectName}_redis
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio
+    container_name: {$projectName}_minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_BROWSER_REDIRECT_URL={$baseUrl}/minio
+      - MINIO_ROOT_USER={$minioKey}
+      - MINIO_ROOT_PASSWORD={$minioSecret}
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:9000/minio/health/live']
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  gotrue:
+    image: appflowyinc/gotrue:latest
+    container_name: {$projectName}_gotrue
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - GOTRUE_ADMIN_EMAIL={$adminEmail}
+      - GOTRUE_ADMIN_PASSWORD={$adminPass}
+      - GOTRUE_DISABLE_SIGNUP=false
+      - GOTRUE_SITE_URL=appflowy-flutter://
+      - GOTRUE_URI_ALLOW_LIST=**
+      - GOTRUE_JWT_SECRET={$jwtSecret}
+      - GOTRUE_JWT_EXP=604800
+      - GOTRUE_JWT_ADMIN_GROUP_NAME=supabase_admin
+      - GOTRUE_DB_DRIVER=postgres
+      - API_EXTERNAL_URL={$apiExternalUrl}
+      - DATABASE_URL={$gotrueDbUrl}
+      - PORT=9999
+      - GOTRUE_SMTP_HOST={$smtpHost}
+      - GOTRUE_SMTP_PORT={$smtpPort}
+      - GOTRUE_SMTP_USER={$smtpUser}
+      - GOTRUE_SMTP_PASS={$smtpPass}
+      - GOTRUE_SMTP_ADMIN_EMAIL={$smtpEmail}
+      - GOTRUE_MAILER_URLPATHS_CONFIRMATION=/gotrue/verify
+      - GOTRUE_MAILER_URLPATHS_INVITE=/gotrue/verify
+      - GOTRUE_MAILER_URLPATHS_RECOVERY=/gotrue/verify
+      - GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE=/gotrue/verify
+      - GOTRUE_MAILER_AUTOCONFIRM=true
+      - GOTRUE_RATE_LIMIT_EMAIL_SENT=100
+    healthcheck:
+      test: 'curl --fail http://127.0.0.1:9999/health || exit 1'
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+
+  appflowy_cloud:
+    image: appflowyinc/appflowy_cloud:latest
+    container_name: {$projectName}_cloud
+    restart: unless-stopped
+    depends_on:
+      gotrue:
+        condition: service_healthy
+    environment:
+      - RUST_LOG=info
+      - APPFLOWY_ENVIRONMENT=production
+      - APPFLOWY_DATABASE_URL={$dbUrl}
+      - APPFLOWY_REDIS_URI={$redisUri}
+      - APPFLOWY_GOTRUE_JWT_SECRET={$jwtSecret}
+      - APPFLOWY_GOTRUE_BASE_URL=http://gotrue:9999
+      - APPFLOWY_S3_CREATE_BUCKET=true
+      - APPFLOWY_S3_USE_MINIO=true
+      - APPFLOWY_S3_MINIO_URL={$minioUrl}
+      - APPFLOWY_S3_ACCESS_KEY={$minioKey}
+      - APPFLOWY_S3_SECRET_KEY={$minioSecret}
+      - APPFLOWY_S3_BUCKET=appflowy
+      - APPFLOWY_S3_REGION=us-east-1
+      - APPFLOWY_S3_PRESIGNED_URL_ENDPOINT={$presignedEndpoint}
+      - APPFLOWY_MAILER_SMTP_HOST={$smtpHost}
+      - APPFLOWY_MAILER_SMTP_PORT={$smtpPort}
+      - APPFLOWY_MAILER_SMTP_USERNAME={$smtpUser}
+      - APPFLOWY_MAILER_SMTP_EMAIL={$smtpEmail}
+      - APPFLOWY_MAILER_SMTP_PASSWORD={$smtpPass}
+      - APPFLOWY_MAILER_SMTP_TLS_KIND=wrapper
+      - APPFLOWY_ACCESS_CONTROL=true
+      - APPFLOWY_DATABASE_MAX_CONNECTIONS=40
+      - AI_SERVER_HOST=ai
+      - AI_SERVER_PORT=5001
+      - AI_OPENAI_API_KEY={$openaiKey}
+      - APPFLOWY_WEB_URL={$baseUrl}
+      - APPFLOWY_BASE_URL={$baseUrl}
+      - APPFLOWY_SEARCH_SERVICE_URL=http://appflowy_search:4002
+      - AI_ENABLED=true
+    healthcheck:
+      test: 'curl --fail http://127.0.0.1:8000/api/health || exit 1'
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  admin_frontend:
+    image: appflowyinc/admin_frontend:latest
+    container_name: {$projectName}_admin
+    restart: unless-stopped
+    depends_on:
+      gotrue:
+        condition: service_healthy
+      appflowy_cloud:
+        condition: service_healthy
+    environment:
+      - APPFLOWY_GOTRUE_BASE_URL=http://gotrue:9999
+      - APPFLOWY_BASE_URL=http://appflowy_cloud:8000
+
+  appflowy_web:
+    image: appflowyinc/appflowy_web:latest
+    container_name: {$projectName}_web
+    restart: unless-stopped
+    depends_on:
+      appflowy_cloud:
+        condition: service_healthy
+    environment:
+      - APPFLOWY_BASE_URL={$baseUrl}
+      - APPFLOWY_GOTRUE_BASE_URL={$baseUrl}/gotrue
+      - APPFLOWY_WS_BASE_URL={$wsBaseUrl}
+
+  ai:
+    image: appflowyinc/appflowy_ai:latest
+    container_name: {$projectName}_ai
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      appflowy_cloud:
+        condition: service_healthy
+    environment:
+      - AI_SERVER_PORT=5001
+      - OPENAI_API_KEY={$openaiKey}
+      - DEFAULT_AI_MODEL=gpt-4.1-mini
+      - DEFAULT_AI_COMPLETION_MODEL=gpt-4.1-mini
+      - APPFLOWY_S3_ACCESS_KEY={$minioKey}
+      - APPFLOWY_S3_SECRET_KEY={$minioSecret}
+      - APPFLOWY_S3_BUCKET=appflowy
+      - APPFLOWY_S3_REGION=us-east-1
+      - AI_DATABASE_URL={$dbUrl}
+      - AI_REDIS_URL={$redisUri}
+      - AI_USE_MINIO=true
+      - AI_MINIO_URL={$minioUrl}
+      - AI_APPFLOWY_HOST={$baseUrl}
+      - APPFLOWY_GOTRUE_JWT_SECRET={$jwtSecret}
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:5001/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  appflowy_search:
+    image: appflowyinc/appflowy_search:latest
+    container_name: {$projectName}_search
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - RUST_LOG=info
+      - APPFLOWY_SEARCH_HOST=[::]
+      - APPFLOWY_SEARCH_PORT=4002
+      - APPFLOWY_SEARCH_DATABASE_URL={$dbUrl}
+      - APPFLOWY_SEARCH_REDIS_URL={$redisUri}
+      - AI_OPENAI_API_KEY={$openaiKey}
+      - APPFLOWY_S3_USE_MINIO=true
+      - APPFLOWY_S3_MINIO_URL={$minioUrl}
+      - APPFLOWY_S3_ACCESS_KEY={$minioKey}
+      - APPFLOWY_S3_SECRET_KEY={$minioSecret}
+      - APPFLOWY_S3_BUCKET=appflowy
+      - APPFLOWY_S3_REGION=us-east-1
+      - APPFLOWY_BACKGROUND_INDEXER_ENABLED=true
+      - APPFLOWY_KEYWORD_SEARCH_ENABLED=true
+      - APPFLOWY_KEYWORD_WORKER_ENABLED=true
+      - APPFLOWY_KEYWORD_INDEX_DIR=/var/lib/appflowy/keyword_index
+      - APPFLOWY_GOTRUE_JWT_SECRET={$jwtSecret}
+    volumes:
+      - keyword_index_data:/var/lib/appflowy/keyword_index
+
+  appflowy_worker:
+    image: appflowyinc/appflowy_worker:latest
+    container_name: {$projectName}_worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      appflowy_cloud:
+        condition: service_healthy
+    environment:
+      - RUST_LOG=info
+      - APPFLOWY_ENVIRONMENT=production
+      - APPFLOWY_WORKER_REDIS_URL={$redisUri}
+      - APPFLOWY_WORKER_ENVIRONMENT=production
+      - APPFLOWY_WORKER_DATABASE_URL={$dbUrl}
+      - APPFLOWY_WORKER_DATABASE_NAME={$pgDb}
+      - APPFLOWY_WORKER_IMPORT_TICK_INTERVAL=30
+      - APPFLOWY_S3_USE_MINIO=true
+      - APPFLOWY_S3_MINIO_URL={$minioUrl}
+      - APPFLOWY_S3_ACCESS_KEY={$minioKey}
+      - APPFLOWY_S3_SECRET_KEY={$minioSecret}
+      - APPFLOWY_S3_BUCKET=appflowy
+      - APPFLOWY_S3_REGION=us-east-1
+      - APPFLOWY_MAILER_SMTP_HOST={$smtpHost}
+      - APPFLOWY_MAILER_SMTP_PORT={$smtpPort}
+      - APPFLOWY_MAILER_SMTP_USERNAME={$smtpUser}
+      - APPFLOWY_MAILER_SMTP_EMAIL={$smtpEmail}
+      - APPFLOWY_MAILER_SMTP_PASSWORD={$smtpPass}
+      - APPFLOWY_MAILER_SMTP_TLS_KIND=wrapper
+
+volumes:
+  minio_data:
+  keyword_index_data:
+
+YAML;
+    }
+
+    /**
+     * Internal nginx config for AppFlowy. Mirrors AppFlowy-Cloud's reference
+     * nginx.conf but HTTP-only (the outer hostiqo nginx terminates TLS) and with
+     * the optional pgadmin block removed. This is the single entrypoint that the
+     * outer per-domain proxy targets; it path-routes to each backend service.
+     */
+    protected function generateAppFlowyNginxConf(Website $website): string
+    {
+        return <<<'NGINX'
+events {
+    worker_connections 1024;
+}
+
+http {
+    # docker dns resolver
+    resolver 127.0.0.11 valid=10s;
+
+    map $http_upgrade $connection_upgrade {
+        default upgrade;
+        '' close;
+    }
+
+    server {
+        listen 80;
+        client_max_body_size 2G;
+
+        underscores_in_headers on;
+        set $appflowy_cloud_backend "http://appflowy_cloud:8000";
+        set $gotrue_backend "http://gotrue:9999";
+        set $admin_frontend_backend "http://admin_frontend:3000";
+        set $appflowy_web_backend "http://appflowy_web:80";
+        set $minio_backend "http://minio:9001";
+        set $minio_api_backend "http://minio:9000";
+        set $minio_internal_host "minio:9000";
+
+        # GoTrue
+        location /gotrue/ {
+            proxy_pass $gotrue_backend;
+            rewrite ^/gotrue(/.*)$ $1 break;
+            proxy_set_header Host $http_host;
+            proxy_pass_request_headers on;
+        }
+
+        # WebSocket
+        location /ws {
+            proxy_pass $appflowy_cloud_backend;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "Upgrade";
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_read_timeout 86400s;
+        }
+
+        location /api {
+            proxy_pass $appflowy_cloud_backend;
+            proxy_set_header X-Request-Id $request_id;
+            proxy_set_header Host $http_host;
+
+            location ~* ^/api/workspace/([a-zA-Z0-9_-]+)/publish$ {
+                proxy_pass $appflowy_cloud_backend;
+                proxy_request_buffering off;
+                client_max_body_size 256M;
+            }
+
+            location /api/chat {
+                proxy_pass $appflowy_cloud_backend;
+                proxy_http_version 1.1;
+                proxy_set_header Connection "";
+                chunked_transfer_encoding on;
+                proxy_buffering off;
+                proxy_cache off;
+                proxy_read_timeout 600s;
+                proxy_connect_timeout 600s;
+                proxy_send_timeout 600s;
+            }
+
+            location /api/import {
+                proxy_pass $appflowy_cloud_backend;
+                proxy_set_header X-Request-Id $request_id;
+                proxy_set_header Host $http_host;
+                proxy_read_timeout 600s;
+                proxy_connect_timeout 600s;
+                proxy_send_timeout 600s;
+                proxy_request_buffering off;
+                proxy_buffering off;
+                proxy_cache off;
+                client_max_body_size 2G;
+            }
+        }
+
+        # MinIO Web UI
+        location /minio/ {
+            proxy_pass $minio_backend;
+            rewrite ^/minio/(.*) /$1 break;
+            proxy_set_header Host $http_host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header X-NginX-Proxy true;
+            real_ip_header X-Real-IP;
+            proxy_connect_timeout 300s;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            chunked_transfer_encoding off;
+        }
+
+        # MinIO API (presigned URLs)
+        location /minio-api/ {
+            proxy_pass $minio_api_backend;
+            proxy_set_header Host $minio_internal_host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            rewrite ^/minio-api/(.*) /$1 break;
+            proxy_connect_timeout 300s;
+            proxy_read_timeout 600s;
+            proxy_send_timeout 600s;
+            proxy_request_buffering off;
+            proxy_http_version 1.1;
+            proxy_set_header Connection "";
+            chunked_transfer_encoding off;
+            client_max_body_size 0;
+        }
+
+        # AI
+        location /ai/ {
+            proxy_pass $appflowy_cloud_backend;
+            proxy_set_header X-Request-Id $request_id;
+            proxy_set_header Host $http_host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        # Admin Frontend
+        location /console {
+            proxy_pass $admin_frontend_backend;
+            proxy_set_header X-Forwarded-Host $http_host;
+            proxy_set_header Host $http_host;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Scheme $scheme;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection 'upgrade';
+            proxy_cache_bypass $http_upgrade;
+        }
+
+        # AppFlowy Web (catch-all)
+        location / {
+            proxy_pass $appflowy_web_backend;
+            proxy_set_header X-Scheme $scheme;
+            proxy_set_header Host $host;
+        }
+    }
+}
+NGINX;
+    }
+
+    /**
+     * Extra non-compose files a template needs written into its project dir,
+     * keyed by path relative to the project directory.
+     *
+     * @return array<string, string>
+     */
+    protected function getTemplateExtraFiles(Website $website): array
+    {
+        return match($website->docker_template) {
+            'appflowy' => ['nginx/nginx.conf' => $this->generateAppFlowyNginxConf($website)],
+            default => [],
+        };
+    }
+
+    /**
      * Create docker-compose.yml file for a website.
      *
      * @param Website $website
@@ -526,6 +1033,7 @@ YAML;
                 'gitea' => ['gitea', 'mysql'],
                 'uptime-kuma' => ['uptime-kuma'],
                 'n8n' => ['n8n-data'],
+                'appflowy' => ['postgres', 'nginx'],
                 default => [],
             };
 
@@ -548,6 +1056,24 @@ YAML;
                     if ($uidOwnership) {
                         Process::run("sudo /bin/chown -R {$uidOwnership}:{$uidOwnership} {$fullPath}");
                     }
+                }
+            }
+
+            // Write any template-specific support files (e.g. AppFlowy's internal
+            // nginx.conf). Their parent dirs were created via $subdirs above.
+            foreach ($this->getTemplateExtraFiles($website) as $relativePath => $fileContent) {
+                $fullPath = "{$projectDir}/{$relativePath}";
+
+                if ($this->isLocal) {
+                    File::ensureDirectoryExists(dirname($fullPath));
+                    File::put($fullPath, $fileContent);
+                } else {
+                    Process::run('sudo /bin/mkdir -p ' . dirname($fullPath));
+                    $tempExtraFile = tempnam(sys_get_temp_dir(), 'docker_extra_');
+                    File::put($tempExtraFile, $fileContent);
+                    Process::run("sudo /bin/cp {$tempExtraFile} {$fullPath}");
+                    Process::run("sudo /bin/chmod 644 {$fullPath}");
+                    @unlink($tempExtraFile);
                 }
             }
 
