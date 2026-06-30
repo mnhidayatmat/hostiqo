@@ -78,6 +78,29 @@ class DeploymentService
     }
 
     /**
+     * Run a filesystem command, preferring the worker's own permissions and
+     * falling back to passwordless sudo only if the unprivileged attempt fails.
+     *
+     * The sudo fallback uses `sudo -n` (non-interactive) so a missing sudo rule
+     * fails fast with a clear error instead of hanging on — or aborting with —
+     * "a terminal is required to read the password". When the project directory
+     * is owned by the worker user, no sudo is needed at all.
+     *
+     * @param array<int, string> $command The command + args (no sudo prefix)
+     * @return \Illuminate\Contracts\Process\ProcessResult
+     */
+    protected function runFsCommand(array $command)
+    {
+        $result = Process::run($command);
+
+        if ($result->failed()) {
+            $result = Process::run(array_merge(['sudo', '-n'], $command));
+        }
+
+        return $result;
+    }
+
+    /**
      * Execute the deployment process.
      *
      * @param Webhook $webhook The webhook to deploy
@@ -132,8 +155,8 @@ class DeploymentService
                 // Ensure parent directory exists and is writable
                 $parentDir = dirname($localPath);
                 if (!File::isDirectory($parentDir)) {
-                    Process::run(['sudo', '/bin/mkdir', '-p', $parentDir]);
-                    Process::run(['sudo', '/bin/chmod', '755', $parentDir]);
+                    $this->runFsCommand(['mkdir', '-p', $parentDir]);
+                    $this->runFsCommand(['chmod', '755', $parentDir]);
                 }
 
                 // Check if directory exists and is a git repo
@@ -194,31 +217,35 @@ class DeploymentService
 
                         if ($result->failed()) {
                             // Clean up temp dir on failure
-                            Process::run(['sudo', '/bin/rm', '-rf', $tempClonePath]);
+                            $this->runFsCommand(['rm', '-rf', $tempClonePath]);
                             throw new \Exception("Git clone failed: " . $result->errorOutput());
                         }
 
                         // Copy cloned files into existing directory (preserving existing files like docker-compose.yml)
-                        $result = Process::run("sudo /bin/cp -a {$tempClonePath}/. {$localPath}/");
+                        $result = $this->runFsCommand(['cp', '-a', "{$tempClonePath}/.", "{$localPath}/"]);
                         if ($result->failed()) {
-                            Process::run(['sudo', '/bin/rm', '-rf', $tempClonePath]);
-                            throw new \Exception("Failed to merge cloned repo: " . $result->errorOutput());
+                            $this->runFsCommand(['rm', '-rf', $tempClonePath]);
+                            throw new \Exception(
+                                "Failed to merge cloned repo: " . $result->errorOutput()
+                                . " (ensure {$localPath} is writable by the deploy worker, e.g. "
+                                . "`sudo chown -R www-data:www-data " . dirname($localPath) . "`)"
+                            );
                         }
 
                         // Clean up temp directory
-                        Process::run(['sudo', '/bin/rm', '-rf', $tempClonePath]);
+                        $this->runFsCommand(['rm', '-rf', $tempClonePath]);
 
                         if ($deployUser) {
-                            Process::run(['sudo', '/bin/chown', '-R', "{$deployUser}:{$deployUser}", $localPath]);
+                            $this->runFsCommand(['chown', '-R', "{$deployUser}:{$deployUser}", $localPath]);
                         }
 
                         $output[] = "Merged cloned repository into existing project directory.";
                     } else {
                         // Directory doesn't exist — create parent and clone directly
-                        Process::run(['sudo', '/bin/mkdir', '-p', $localPath]);
+                        $this->runFsCommand(['mkdir', '-p', $localPath]);
 
                         if ($deployUser) {
-                            Process::run(['sudo', '/bin/chown', '-R', "{$deployUser}:{$deployUser}", $localPath]);
+                            $this->runFsCommand(['chown', '-R', "{$deployUser}:{$deployUser}", $localPath]);
                         }
 
                         $command = $this->prepareCommandAsUser([
@@ -440,8 +467,8 @@ class DeploymentService
                     if (empty($files) && empty($directories)) {
                         // Empty directory - delete it so we can clone fresh
                         $output[] = "Removing empty directory: {$localPath}";
-                        $result = Process::run(['sudo', 'rm', '-rf', $localPath]);
-                        
+                        $result = $this->runFsCommand(['rm', '-rf', $localPath]);
+
                         if ($result->failed()) {
                             throw new \Exception("Failed to remove directory: " . $result->errorOutput());
                         }
