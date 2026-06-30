@@ -145,6 +145,15 @@ NGINX;
         $securityHeaders = $this->getSecurityHeaders();
         $logDir = '/var/log/nginx';
 
+        // Per-template upload limit. Some stacks (e.g. AppFlowy) accept large
+        // imports that AppFlowy's own internal nginx allows up to 2G; without a
+        // matching outer limit those uploads fail with a 413 here before ever
+        // reaching the app. Default stays conservative for everything else.
+        $maxBodySize = match ($website->docker_template) {
+            'appflowy' => '2G',
+            default => '100M',
+        };
+
         return <<<NGINX
 server {
     listen 80;
@@ -159,7 +168,7 @@ server {
     error_log {$logDir}/{$website->domain}-error.log;
 
     # Security: Limit request body size
-    client_max_body_size 100M;
+    client_max_body_size {$maxBodySize};
 
 {$securityHeaders}
 
