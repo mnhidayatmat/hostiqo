@@ -42,6 +42,7 @@ class Website extends Model
         'docker_ports',
         'docker_volumes',
         'docker_template',
+        'docker_compose',
         'cloudflare_zone_id',
         'cloudflare_record_id',
         'cloudflare_www_record_id',

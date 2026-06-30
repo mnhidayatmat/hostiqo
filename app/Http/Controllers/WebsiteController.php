@@ -67,12 +67,13 @@ class WebsiteController extends Controller
             'php_version' => ['required_if:project_type,php', 'nullable', 'string', 'max:10'],
             'node_version' => ['nullable', 'string', 'max:10'],
             'php_settings' => ['nullable', 'array'],
-            'port' => ['nullable', 'integer', 'min:1', 'max:65535'],
+            'port' => ['nullable', 'integer', 'min:1', 'max:65535', 'required_if:docker_template,custom'],
             'ssl_enabled' => ['boolean'],
             'www_redirect' => ['nullable', 'in:none,to_www,to_non_www'],
             'is_active' => ['boolean'],
             'docker_template' => ['nullable', 'string', 'max:50'],
             'docker_env' => ['nullable', 'array'],
+            'docker_compose' => ['nullable', 'string', 'required_if:docker_template,custom'],
         ]);
 
         // Auto-generate root_path if not provided

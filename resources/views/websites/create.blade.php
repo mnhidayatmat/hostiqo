@@ -265,6 +265,9 @@
                                 <option value="appflowy" {{ old('docker_template') === 'appflowy' ? 'selected' : '' }}>
                                     AppFlowy - AI Workspace / Notion Alternative
                                 </option>
+                                <option value="custom" {{ old('docker_template') === 'custom' ? 'selected' : '' }}>
+                                    Custom - Paste your own docker-compose.yml
+                                </option>
                             </select>
                             <div class="form-text">Choose a pre-configured Docker template</div>
                             @error('docker_template')
@@ -390,6 +393,39 @@
                                     autocomplete="off"
                                 >
                                 <div class="form-text">Leave empty to auto-generate (admin@your-domain). The admin password is auto-generated; change it later via env vars.</div>
+                            </div>
+                        </div>
+
+                        {{-- Custom: paste any docker-compose.yml. Lets you deploy apps
+                             that have no built-in template, without adding panel code. --}}
+                        <div id="custom-config-group" data-templates="custom">
+                            <div class="alert alert-warning">
+                                <i class="bi bi-exclamation-triangle me-1"></i>
+                                Paste a complete <code>docker-compose.yml</code>. It runs as-is via
+                                <code>docker compose up -d</code>. Make sure one service publishes the
+                                <strong>Port</strong> you set above &mdash; the reverse proxy forwards
+                                <code>{{ '127.0.0.1:<port>' }}</code> to your domain.
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="docker_compose" class="form-label">
+                                    docker-compose.yml <span class="text-danger">*</span>
+                                </label>
+                                <textarea
+                                    class="form-control font-monospace @error('docker_compose') is-invalid @enderror"
+                                    id="docker_compose"
+                                    name="docker_compose"
+                                    rows="16"
+                                    spellcheck="false"
+                                    placeholder="services:&#10;  app:&#10;    image: grafana/grafana:latest&#10;    ports:&#10;      - '3000:3000'&#10;    restart: unless-stopped"
+                                >{{ old('docker_compose') }}</textarea>
+                                <div class="form-text">
+                                    Secrets are not auto-generated for custom compose &mdash; set them in the file
+                                    or via Environment Variables. The published host port must match the Port field.
+                                </div>
+                                @error('docker_compose')
+                                    <div class="invalid-feedback">{{ $message }}</div>
+                                @enderror
                             </div>
                         </div>
 

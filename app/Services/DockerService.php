@@ -160,6 +160,7 @@ class DockerService
             'uptime-kuma' => $this->generateUptimeKumaCompose($website, $projectName, $port),
             'n8n' => $this->generateN8nCompose($website, $projectName, $port),
             'appflowy' => $this->generateAppFlowyCompose($website, $projectName, $port),
+            'custom' => $this->generateCustomCompose($website, $projectName, $port),
             default => throw new \InvalidArgumentException("Unknown template: {$template}"),
         };
     }
@@ -470,6 +471,25 @@ services:
     restart: unless-stopped
 
 YAML;
+    }
+
+    /**
+     * "Custom" template: deploy any app from a user-supplied docker-compose.yml.
+     *
+     * The compose content is stored verbatim on the website (docker_compose) and
+     * written as-is. The user is responsible for the YAML, including publishing a
+     * host port that matches the website's configured port so the outer nginx
+     * reverse proxy can reach it.
+     */
+    protected function generateCustomCompose(Website $website, string $projectName, int $port): string
+    {
+        $compose = trim((string) ($website->docker_compose ?? ''));
+
+        if ($compose === '') {
+            throw new \InvalidArgumentException('Custom Docker project has no docker-compose.yml content.');
+        }
+
+        return $compose . "\n";
     }
 
     /**
