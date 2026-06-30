@@ -172,10 +172,12 @@ server {
 
 {$securityHeaders}
 
-    # Allow Let's Encrypt ACME challenge
+    # Allow Let's Encrypt ACME challenge. Must serve from the same webroot
+    # SslService passes to certbot (the site's root_path), not /var/www/<domain>,
+    # otherwise the challenge token 404s and issuance fails for docker sites.
     location ^~ /.well-known/acme-challenge/ {
         allow all;
-        root /var/www/{$website->domain};
+        root {$website->root_path};
         try_files \$uri =404;
     }
 
