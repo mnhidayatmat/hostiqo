@@ -301,86 +301,102 @@
                         <i class="bi bi-gear me-2"></i> Environment Configuration
                     </div>
                     <div class="card-body">
-                        <div class="alert alert-info">
-                            <i class="bi bi-info-circle me-1"></i>
-                            Default database credentials will be generated. You can change them after creation.
+                        {{-- Database credentials. Only shown for DB-backed templates
+                             (affine/wordpress/nextcloud/gitea). Inputs are disabled
+                             when hidden so they never submit irrelevant values. --}}
+                        <div id="db-config-group" data-templates="affine wordpress nextcloud gitea">
+                            <div class="alert alert-info">
+                                <i class="bi bi-info-circle me-1"></i>
+                                Default database credentials will be generated. You can change them after creation.
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="db_password" class="form-label">
+                                    Database Password
+                                </label>
+                                <input
+                                    type="password"
+                                    class="form-control @error('docker_env.DB_PASSWORD') is-invalid @enderror"
+                                    id="db_password"
+                                    name="docker_env[DB_PASSWORD]"
+                                    value="{{ old('docker_env.DB_PASSWORD') }}"
+                                    placeholder="Auto-generated secure password"
+                                    autocomplete="new-password"
+                                >
+                                <div class="form-text">Leave empty to auto-generate a secure password</div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="db_user" class="form-label">
+                                    Database Username
+                                </label>
+                                <input
+                                    type="text"
+                                    class="form-control @error('docker_env.DB_USERNAME') is-invalid @enderror"
+                                    id="db_user"
+                                    name="docker_env[DB_USERNAME]"
+                                    value="{{ old('docker_env.DB_USERNAME') }}"
+                                    placeholder="Template default"
+                                >
+                                <div class="form-text">Leave empty to use the template default</div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="db_database" class="form-label">
+                                    Database Name
+                                </label>
+                                <input
+                                    type="text"
+                                    class="form-control @error('docker_env.DB_DATABASE') is-invalid @enderror"
+                                    id="db_database"
+                                    name="docker_env[DB_DATABASE]"
+                                    value="{{ old('docker_env.DB_DATABASE') }}"
+                                    placeholder="Template default"
+                                >
+                                <div class="form-text">Leave empty to use the template default</div>
+                            </div>
                         </div>
 
-                        <div class="mb-3">
-                            <label for="db_password" class="form-label">
-                                Database Password
-                            </label>
-                            <input
-                                type="password"
-                                class="form-control @error('docker_env.DB_PASSWORD') is-invalid @enderror"
-                                id="db_password"
-                                name="docker_env[DB_PASSWORD]"
-                                value="{{ old('docker_env.DB_PASSWORD') }}"
-                                placeholder="Auto-generated secure password"
-                                autocomplete="new-password"
-                            >
-                            <div class="form-text">Leave empty to auto-generate a secure password</div>
+                        {{-- AppFlowy-only options. Hidden (and inputs disabled) for
+                             every other template so they never leak into docker_env. --}}
+                        <div id="appflowy-config-group" data-templates="appflowy">
+                            <div class="mb-3">
+                                <label for="appflowy_openai_key" class="form-label">
+                                    OpenAI API Key <span class="text-muted">(AppFlowy AI)</span>
+                                </label>
+                                <input
+                                    type="password"
+                                    class="form-control @error('docker_env.AI_OPENAI_API_KEY') is-invalid @enderror"
+                                    id="appflowy_openai_key"
+                                    name="docker_env[AI_OPENAI_API_KEY]"
+                                    value="{{ old('docker_env.AI_OPENAI_API_KEY') }}"
+                                    placeholder="sk-... (optional, enables AppFlowy AI)"
+                                    autocomplete="off"
+                                >
+                                <div class="form-text">Leave empty to run AppFlowy without AI features.</div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="appflowy_admin_email" class="form-label">
+                                    Admin Email <span class="text-muted">(AppFlowy)</span>
+                                </label>
+                                <input
+                                    type="email"
+                                    class="form-control @error('docker_env.GOTRUE_ADMIN_EMAIL') is-invalid @enderror"
+                                    id="appflowy_admin_email"
+                                    name="docker_env[GOTRUE_ADMIN_EMAIL]"
+                                    value="{{ old('docker_env.GOTRUE_ADMIN_EMAIL') }}"
+                                    placeholder="admin@yourdomain.com"
+                                    autocomplete="off"
+                                >
+                                <div class="form-text">Leave empty to auto-generate (admin@your-domain). The admin password is auto-generated; change it later via env vars.</div>
+                            </div>
                         </div>
 
-                        <div class="mb-3">
-                            <label for="db_user" class="form-label">
-                                Database Username
-                            </label>
-                            <input
-                                type="text"
-                                class="form-control @error('docker_env.DB_USERNAME') is-invalid @enderror"
-                                id="db_user"
-                                name="docker_env[DB_USERNAME]"
-                                value="{{ old('docker_env.DB_USERNAME', 'affine') }}"
-                                placeholder="affine"
-                            >
-                        </div>
-
-                        <div class="mb-3">
-                            <label for="db_database" class="form-label">
-                                Database Name
-                            </label>
-                            <input
-                                type="text"
-                                class="form-control @error('docker_env.DB_DATABASE') is-invalid @enderror"
-                                id="db_database"
-                                name="docker_env[DB_DATABASE]"
-                                value="{{ old('docker_env.DB_DATABASE', 'affine') }}"
-                                placeholder="affine"
-                            >
-                        </div>
-
-                        {{-- AppFlowy-only options. Ignored by other templates. --}}
-                        <div class="mb-3">
-                            <label for="appflowy_openai_key" class="form-label">
-                                OpenAI API Key <span class="text-muted">(AppFlowy AI)</span>
-                            </label>
-                            <input
-                                type="password"
-                                class="form-control @error('docker_env.AI_OPENAI_API_KEY') is-invalid @enderror"
-                                id="appflowy_openai_key"
-                                name="docker_env[AI_OPENAI_API_KEY]"
-                                value="{{ old('docker_env.AI_OPENAI_API_KEY') }}"
-                                placeholder="sk-... (required for AppFlowy AI features)"
-                                autocomplete="off"
-                            >
-                            <div class="form-text">Only used by the AppFlowy template. Leave empty to run AppFlowy without AI features.</div>
-                        </div>
-
-                        <div class="mb-3">
-                            <label for="appflowy_admin_email" class="form-label">
-                                Admin Email <span class="text-muted">(AppFlowy)</span>
-                            </label>
-                            <input
-                                type="email"
-                                class="form-control @error('docker_env.GOTRUE_ADMIN_EMAIL') is-invalid @enderror"
-                                id="appflowy_admin_email"
-                                name="docker_env[GOTRUE_ADMIN_EMAIL]"
-                                value="{{ old('docker_env.GOTRUE_ADMIN_EMAIL') }}"
-                                placeholder="admin@yourdomain.com"
-                                autocomplete="off"
-                            >
-                            <div class="form-text">Only used by the AppFlowy template. Leave empty to auto-generate (admin@your-domain).</div>
+                        {{-- Shown for templates that need no extra configuration. --}}
+                        <div id="no-config-note" class="alert alert-secondary mb-0" style="display:none;">
+                            <i class="bi bi-check-circle me-1"></i>
+                            This template needs no extra configuration. Secure secrets are generated automatically.
                         </div>
                     </div>
                 </div>
@@ -582,6 +598,41 @@ $(function() {
             manuallyEdited = false;
         }
     });
+
+    // --- Template-aware Docker environment fields ---
+    // Each config group declares which templates it applies to via data-templates.
+    // Groups that don't apply are hidden AND their inputs disabled, so disabled
+    // inputs are never submitted (prevents e.g. affine DB creds leaking into AppFlowy).
+    var $templateSelect = $('#docker_template');
+    if ($templateSelect.length) {
+        var $configGroups = $('[data-templates]');
+        var $noConfigNote = $('#no-config-note');
+
+        function applyTemplateFields() {
+            var template = $templateSelect.val() || '';
+            var anyVisible = false;
+
+            $configGroups.each(function() {
+                var $group = $(this);
+                var templates = ($group.data('templates') || '').toString().split(/\s+/);
+                var applies = templates.indexOf(template) !== -1;
+
+                $group.toggle(applies);
+                // Disabled inputs are excluded from form submission.
+                $group.find('input, select, textarea').prop('disabled', !applies);
+                if (applies) {
+                    anyVisible = true;
+                }
+            });
+
+            // Show the "no extra config" note only when a template is chosen
+            // but none of the config groups apply to it.
+            $noConfigNote.toggle(template !== '' && !anyVisible);
+        }
+
+        $templateSelect.on('change', applyTemplateFields);
+        applyTemplateFields(); // set correct initial state (respects old() selection)
+    }
 });
 </script>
 @endpush
