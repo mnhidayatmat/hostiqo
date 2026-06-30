@@ -878,6 +878,14 @@ www-data ALL=(ALL) NOPASSWD: /bin/mv /tmp/* /var/www/[a-zA-Z0-9._-]*/*
 www-data ALL=(ALL) NOPASSWD: /bin/rm -rf /var/www/[a-zA-Z0-9._-]*
 www-data ALL=(ALL) NOPASSWD: /usr/bin/find /var/www/[a-zA-Z0-9._-]* *
 
+# Git/Docker Deployment - manage nested project paths (e.g. /var/www/docker/<project>)
+# and merge a temp clone into the project dir (sudo cp -a <tmp>/. <dest>/).
+www-data ALL=(ALL) NOPASSWD: /bin/cp -a /var/www/* /var/www/*
+www-data ALL=(ALL) NOPASSWD: /bin/mkdir -p /var/www/*
+www-data ALL=(ALL) NOPASSWD: /bin/rm -rf /var/www/*
+www-data ALL=(ALL) NOPASSWD: /bin/chown -R [a-zA-Z0-9_-]*?[a-zA-Z0-9_-]* /var/www/*
+www-data ALL=(ALL) NOPASSWD: /bin/chmod -R [0-9]* /var/www/*
+
 # Nginx Cache Directory
 www-data ALL=(ALL) NOPASSWD: /bin/mkdir -p /var/cache/nginx/*
 www-data ALL=(ALL) NOPASSWD: /bin/chown -R [a-zA-Z0-9_-]*?[a-zA-Z0-9_-]* /var/cache/nginx/*
@@ -999,6 +1007,14 @@ nginx ALL=(ALL) NOPASSWD: /usr/bin/chmod [0-9]* /var/www/[a-zA-Z0-9._-]*/*
 nginx ALL=(ALL) NOPASSWD: /usr/bin/mv /tmp/* /var/www/[a-zA-Z0-9._-]*/*
 nginx ALL=(ALL) NOPASSWD: /usr/bin/rm -rf /var/www/[a-zA-Z0-9._-]*
 nginx ALL=(ALL) NOPASSWD: /usr/bin/find /var/www/[a-zA-Z0-9._-]* *
+
+# Git/Docker Deployment - manage nested project paths (e.g. /var/www/docker/<project>)
+# and merge a temp clone into the project dir (sudo cp -a <tmp>/. <dest>/).
+nginx ALL=(ALL) NOPASSWD: /usr/bin/cp -a /var/www/* /var/www/*
+nginx ALL=(ALL) NOPASSWD: /usr/bin/mkdir -p /var/www/*
+nginx ALL=(ALL) NOPASSWD: /usr/bin/rm -rf /var/www/*
+nginx ALL=(ALL) NOPASSWD: /usr/bin/chown -R [a-zA-Z0-9_-]*?[a-zA-Z0-9_-]* /var/www/*
+nginx ALL=(ALL) NOPASSWD: /usr/bin/chmod -R [0-9]* /var/www/*
 
 # Nginx Cache Directory
 nginx ALL=(ALL) NOPASSWD: /usr/bin/mkdir -p /var/cache/nginx/*
