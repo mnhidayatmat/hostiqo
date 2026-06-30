@@ -1002,6 +1002,12 @@ NGINX;
             $projectDir = $this->getProjectDirectory($website);
             $composeFile = "{$projectDir}/docker-compose.yml";
 
+            // The web user runs `docker compose`, so the compose/.env/config files
+            // (created as root via sudo below) must be owned by it — otherwise
+            // `docker compose up` fails reading the 0600 .env. Data dirs are left
+            // untouched (postgres etc. manage their own ownership).
+            $webUser = $this->webUser();
+
             // Create project directory
             if ($this->isLocal) {
                 if (!File::exists($projectDir)) {
@@ -1023,6 +1029,7 @@ NGINX;
                 File::put($tempFile, $content);
                 Process::run("sudo /bin/cp {$tempFile} {$composeFile}");
                 Process::run("sudo /bin/chmod 644 {$composeFile}");
+                Process::run("sudo /bin/chown -R {$webUser}:{$webUser} {$composeFile}");
                 @unlink($tempFile);
             }
 
@@ -1040,6 +1047,7 @@ NGINX;
                     File::put($tempEnvFile, $envContent);
                     Process::run("sudo /bin/cp {$tempEnvFile} {$projectDir}/.env");
                     Process::run("sudo /bin/chmod 600 {$projectDir}/.env");
+                    Process::run("sudo /bin/chown -R {$webUser}:{$webUser} {$projectDir}/.env");
                     @unlink($tempEnvFile);
                 }
             }
@@ -1093,6 +1101,7 @@ NGINX;
                     File::put($tempExtraFile, $fileContent);
                     Process::run("sudo /bin/cp {$tempExtraFile} {$fullPath}");
                     Process::run("sudo /bin/chmod 644 {$fullPath}");
+                    Process::run("sudo /bin/chown -R {$webUser}:{$webUser} " . escapeshellarg(dirname($fullPath)));
                     @unlink($tempExtraFile);
                 }
             }
@@ -1513,6 +1522,25 @@ NGINX;
     {
         $projectName = str_replace(['.', '-'], '_', $website->domain);
         return "{$this->dockerProjectsPath}/{$projectName}";
+    }
+
+    /**
+     * The OS user that runs PHP (and therefore `docker compose`). Files created
+     * as root via sudo are chowned to this user so the compose CLI can read them.
+     * Falls back to www-data when POSIX functions are unavailable.
+     *
+     * @return string
+     */
+    protected function webUser(): string
+    {
+        if (function_exists('posix_geteuid') && function_exists('posix_getpwuid')) {
+            $info = posix_getpwuid(posix_geteuid());
+            if (!empty($info['name'])) {
+                return $info['name'];
+            }
+        }
+
+        return 'www-data';
     }
 
     /**
