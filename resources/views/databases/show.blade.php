@@ -66,6 +66,22 @@
             </div>
 
             <!-- Connection String -->
+            @php
+                $isPg = $database->type === 'postgresql';
+                $driver = $isPg ? 'pgsql' : 'mysql';
+                $port = $isPg ? '5432' : '3306';
+                $envString = "DB_CONNECTION={$driver}\n"
+                    . "DB_HOST={$database->host}\n"
+                    . "DB_PORT={$port}\n"
+                    . "DB_DATABASE={$database->name}\n"
+                    . "DB_USERNAME={$database->username}\n"
+                    . "DB_PASSWORD=your_password_here";
+                $cliLabel = $isPg ? 'PostgreSQL Command Line (psql)' : 'MySQL Command Line';
+                $cliString = $isPg
+                    ? "psql -h {$database->host} -U {$database->username} -d {$database->name}"
+                    : "mysql -h {$database->host} -u {$database->username} -p {$database->name}";
+                $pdoString = "{$driver}:host={$database->host};port={$port};dbname={$database->name}";
+            @endphp
             <div class="card mb-4">
                 <div class="card-body">
                     <h5 class="card-title mb-3"><i class="bi bi-link-45deg"></i> Connection Information</h5>
@@ -79,49 +95,31 @@
                                 type="text"
                                 class="form-control form-control-sm font-monospace bg-light"
                                 readonly
-                                value="@if($database->type === 'postgresql')DB_CONNECTION=pgsql{{"\n"}}DB_HOST={{ $database->host }}{{"\n"}}DB_PORT=5432{{"\n"}}DB_DATABASE={{ $database->name }}{{"\n"}}DB_USERNAME={{ $database->username }}{{"\n"}}DB_PASSWORD=your_password_here@elseDB_CONNECTION=mysql{{"\n"}}DB_HOST={{ $database->host }}{{"\n"}}DB_PORT=3306{{"\n"}}DB_DATABASE={{ $database->name }}{{"\n"}}DB_USERNAME={{ $database->username }}{{"\n"}}DB_PASSWORD=your_password_here@endif"
+                                value="{{ $envString }}"
                                 id="connectionString"
                             >
-                            <button class="btn btn-sm btn-outline-secondary" type="button" onclick="copyToClipboard('@if($database->type === 'postgresql')DB_CONNECTION=pgsql\nDB_HOST={{ $database->host }}\nDB_PORT=5432\nDB_DATABASE={{ $database->name }}\nDB_USERNAME={{ $database->username }}\nDB_PASSWORD=your_password_here@elseDB_CONNECTION=mysql\nDB_HOST={{ $database->host }}\nDB_PORT=3306\nDB_DATABASE={{ $database->name }}\nDB_USERNAME={{ $database->username }}\nDB_PASSWORD=your_password_here@endif', this)">
+                            <button class="btn btn-sm btn-outline-secondary" type="button" onclick="copyToClipboard(document.getElementById('connectionString').value, this)">
                                 <i class="bi bi-clipboard"></i> Copy
                             </button>
                         </div>
                     </div>
 
                     {{-- Command Line Connection --}}
-                    @if($database->type === 'postgresql')
-                        <div class="mb-3">
-                            <label class="form-label text-muted small">PostgreSQL Command Line (psql)</label>
-                            <div class="input-group">
-                                <input
-                                    type="text"
-                                    class="form-control form-control-sm font-monospace bg-light"
-                                    readonly
-                                    value="psql -h {{ $database->host }} -U {{ $database->username }} -d {{ $database->name }}"
-                                    id="psqlCommand"
-                                >
-                                <button class="btn btn-sm btn-outline-secondary" type="button" onclick="copyToClipboard('psql -h {{ $database->host }} -U {{ $database->username }} -d {{ $database->name }}', this)">
-                                    <i class="bi bi-clipboard"></i> Copy
-                                </button>
-                            </div>
+                    <div class="mb-3">
+                        <label class="form-label text-muted small">{{ $cliLabel }}</label>
+                        <div class="input-group">
+                            <input
+                                type="text"
+                                class="form-control form-control-sm font-monospace bg-light"
+                                readonly
+                                value="{{ $cliString }}"
+                                id="cliCommand"
+                            >
+                            <button class="btn btn-sm btn-outline-secondary" type="button" onclick="copyToClipboard(document.getElementById('cliCommand').value, this)">
+                                <i class="bi bi-clipboard"></i> Copy
+                            </button>
                         </div>
-                    @else
-                        <div class="mb-3">
-                            <label class="form-label text-muted small">MySQL Command Line</label>
-                            <div class="input-group">
-                                <input
-                                    type="text"
-                                    class="form-control form-control-sm font-monospace bg-light"
-                                    readonly
-                                    value="mysql -h {{ $database->host }} -u {{ $database->username }} -p {{ $database->name }}"
-                                    id="mysqlCommand"
-                                >
-                                <button class="btn btn-sm btn-outline-secondary" type="button" onclick="copyToClipboard('mysql -h {{ $database->host }} -u {{ $database->username }} -p {{ $database->name }}', this)">
-                                    <i class="bi bi-clipboard"></i> Copy
-                                </button>
-                            </div>
-                        </div>
-                    @endif
+                    </div>
 
                     {{-- PHP PDO Connection Example --}}
                     <div class="mb-0">
@@ -131,10 +129,10 @@
                                 type="text"
                                 class="form-control form-control-sm font-monospace bg-light"
                                 readonly
-                                value="@if($database->type === 'postgresql')pgsql:host={{ $database->host }};port=5432;dbname={{ $database->name }}@elsemysql:host={{ $database->host }};port=3306;dbname={{ $database->name }}@endif"
+                                value="{{ $pdoString }}"
                                 id="pdoString"
                             >
-                            <button class="btn btn-sm btn-outline-secondary" type="button" onclick="copyToClipboard('@if($database->type === 'postgresql')pgsql:host={{ $database->host }};port=5432;dbname={{ $database->name }}@elsemysql:host={{ $database->host }};port=3306;dbname={{ $database->name }}@endif', this)">
+                            <button class="btn btn-sm btn-outline-secondary" type="button" onclick="copyToClipboard(document.getElementById('pdoString').value, this)">
                                 <i class="bi bi-clipboard"></i> Copy
                             </button>
                         </div>
