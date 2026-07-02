@@ -152,6 +152,11 @@
                 <div class="card-body">
                     <!-- Compact Icon Grid -->
                     <div class="d-flex gap-2 flex-wrap justify-content-center mb-3">
+                        <!-- Browse Tables Button -->
+                        <a href="{{ route('databases.tables', $database) }}" class="action-btn info" title="Browse Tables">
+                            <i class="bi bi-table"></i>
+                        </a>
+
                         <!-- Change Password Button -->
                         <a href="{{ route('databases.change-password', $database) }}" class="action-btn warning" title="Change Password">
                             <i class="bi bi-lock-fill"></i>
@@ -215,7 +220,10 @@
                                 <span class="text-muted">Tables</span>
                             </div>
                             <div class="col-md-6 text-end">
-                                <strong>{{ $database->table_count }}</strong>
+                                <a href="{{ route('databases.tables', $database) }}" class="text-decoration-none">
+                                    <strong>{{ $database->table_count }}</strong>
+                                    <i class="bi bi-box-arrow-up-right ms-1 small"></i>
+                                </a>
                             </div>
                         </div>
 

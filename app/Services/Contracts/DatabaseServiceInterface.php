@@ -106,4 +106,41 @@ interface DatabaseServiceInterface
      * @return string
      */
     public function getType(): string;
+
+    /**
+     * Get the list of tables in a database with basic metadata.
+     *
+     * @param string $dbName The database name
+     * @return array<int, object{name: string, rows: int, size_mb: float}>
+     */
+    public function listTables(string $dbName): array;
+
+    /**
+     * Get the column definitions for a table.
+     *
+     * @param string $dbName The database name
+     * @param string $table The table name
+     * @return array<int, object{name: string, type: string, nullable: string, key: string, default: mixed, extra: string}>
+     */
+    public function getTableColumns(string $dbName, string $table): array;
+
+    /**
+     * Get the total number of rows in a table.
+     *
+     * @param string $dbName The database name
+     * @param string $table The table name
+     * @return int
+     */
+    public function getTableRowCount(string $dbName, string $table): int;
+
+    /**
+     * Get a page of rows from a table.
+     *
+     * @param string $dbName The database name
+     * @param string $table The table name
+     * @param int $limit Maximum rows to return
+     * @param int $offset Rows to skip
+     * @return array<int, object> Rows as objects keyed by column name
+     */
+    public function getTableRows(string $dbName, string $table, int $limit = 50, int $offset = 0): array;
 }

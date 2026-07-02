@@ -162,6 +162,75 @@ class DatabaseController extends Controller
     }
 
     /**
+     * List the tables inside a database.
+     *
+     * @param Database $database The database model
+     * @return \Illuminate\View\View|\Illuminate\Http\RedirectResponse
+     */
+    public function tables(Database $database)
+    {
+        $service = $database->getService();
+
+        if (!$service->databaseExists($database->name)) {
+            return redirect()
+                ->route('databases.show', $database)
+                ->withErrors(['error' => 'Database not found on the server.']);
+        }
+
+        try {
+            $tables = $service->listTables($database->name);
+        } catch (Exception $e) {
+            return redirect()
+                ->route('databases.show', $database)
+                ->withErrors(['error' => 'Failed to list tables: ' . $e->getMessage()]);
+        }
+
+        return view('databases.tables', compact('database', 'tables'));
+    }
+
+    /**
+     * Show the columns and a page of rows for a single table.
+     *
+     * @param Request $request The HTTP request
+     * @param Database $database The database model
+     * @param string $table The table name
+     * @return \Illuminate\View\View|\Illuminate\Http\RedirectResponse
+     */
+    public function showTable(Request $request, Database $database, string $table)
+    {
+        $service = $database->getService();
+
+        try {
+            $columns = $service->getTableColumns($database->name, $table);
+
+            if (empty($columns)) {
+                return redirect()
+                    ->route('databases.tables', $database)
+                    ->withErrors(['error' => "Table '{$table}' was not found."]);
+            }
+
+            $perPage = 50;
+            $page = max(1, (int) $request->query('page', 1));
+            $total = $service->getTableRowCount($database->name, $table);
+            $items = $service->getTableRows($database->name, $table, $perPage, ($page - 1) * $perPage);
+
+            $rows = new \Illuminate\Pagination\LengthAwarePaginator(
+                $items,
+                $total,
+                $perPage,
+                $page,
+                ['path' => $request->url(), 'query' => $request->query()]
+            );
+        } catch (Exception $e) {
+            return redirect()
+                ->route('databases.tables', $database)
+                ->withErrors(['error' => 'Failed to load table: ' . $e->getMessage()]);
+        }
+
+        return view('databases.table', compact('database', 'table', 'columns', 'rows'));
+    }
+
+    /**
      * Show the form for editing the specified database.
      *
      * @param Database $database The database model

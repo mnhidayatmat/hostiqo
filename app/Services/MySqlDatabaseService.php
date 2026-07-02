@@ -285,4 +285,105 @@ class MySqlDatabaseService implements DatabaseServiceInterface
 
         return $result[0]->count ?? 0;
     }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function listTables(string $dbName): array
+    {
+        return DB::select("
+            SELECT
+                table_name AS name,
+                COALESCE(table_rows, 0) AS `rows`,
+                ROUND(COALESCE(data_length + index_length, 0) / 1024 / 1024, 2) AS size_mb
+            FROM information_schema.tables
+            WHERE table_schema = ?
+              AND table_type = 'BASE TABLE'
+            ORDER BY table_name
+        ", [$dbName]);
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getTableColumns(string $dbName, string $table): array
+    {
+        return DB::select("
+            SELECT
+                column_name AS name,
+                column_type AS type,
+                is_nullable AS nullable,
+                column_key AS `key`,
+                column_default AS `default`,
+                extra AS extra
+            FROM information_schema.columns
+            WHERE table_schema = ?
+              AND table_name = ?
+            ORDER BY ordinal_position
+        ", [$dbName, $table]);
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getTableRowCount(string $dbName, string $table): int
+    {
+        if (!$this->tableExists($dbName, $table)) {
+            throw new Exception("Table `{$table}` does not exist in `{$dbName}`.");
+        }
+
+        $result = DB::selectOne(
+            "SELECT COUNT(*) AS count FROM {$this->quoteIdent($dbName)}.{$this->quoteIdent($table)}"
+        );
+
+        return (int) ($result->count ?? 0);
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getTableRows(string $dbName, string $table, int $limit = 50, int $offset = 0): array
+    {
+        if (!$this->tableExists($dbName, $table)) {
+            throw new Exception("Table `{$table}` does not exist in `{$dbName}`.");
+        }
+
+        $limit = max(1, min($limit, 1000));
+        $offset = max(0, $offset);
+
+        return DB::select(
+            "SELECT * FROM {$this->quoteIdent($dbName)}.{$this->quoteIdent($table)} LIMIT {$limit} OFFSET {$offset}"
+        );
+    }
+
+    /**
+     * Check whether a table exists using a bound query (safe for validation).
+     *
+     * @param string $dbName The database name
+     * @param string $table The table name
+     * @return bool
+     */
+    protected function tableExists(string $dbName, string $table): bool
+    {
+        $result = DB::select("
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = ?
+              AND table_name = ?
+            LIMIT 1
+        ", [$dbName, $table]);
+
+        return count($result) > 0;
+    }
+
+    /**
+     * Quote a MySQL identifier (database/table/column) safely.
+     *
+     * @param string $ident The identifier
+     * @return string
+     */
+    protected function quoteIdent(string $ident): string
+    {
+        return '`' . str_replace('`', '``', $ident) . '`';
+    }
 }

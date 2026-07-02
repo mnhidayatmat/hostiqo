@@ -59,6 +59,11 @@ Route::middleware('auth')->group(function () {
     Route::get('databases-recheck-permissions', [DatabaseController::class, 'recheckPermissions'])
         ->name('databases.recheck-permissions');
     Route::resource('databases', DatabaseController::class);
+    Route::get('databases/{database}/tables', [DatabaseController::class, 'tables'])
+        ->name('databases.tables');
+    Route::get('databases/{database}/tables/{table}', [DatabaseController::class, 'showTable'])
+        ->name('databases.show-table')
+        ->where('table', '[A-Za-z0-9_]+');
     Route::get('databases/{database}/change-password', [DatabaseController::class, 'showChangePasswordForm'])
         ->name('databases.change-password');
     Route::put('databases/{database}/change-password', [DatabaseController::class, 'changePassword'])

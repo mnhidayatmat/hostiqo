@@ -375,4 +375,150 @@ class PostgreSqlDatabaseService implements DatabaseServiceInterface
             return 0;
         }
     }
+
+    /**
+     * Get a connection bound to a specific database.
+     *
+     * PostgreSQL cannot query the tables of another database over an existing
+     * connection, so we clone the superuser connection config and point it at
+     * the target database.
+     *
+     * @param string $dbName The database name
+     * @return \Illuminate\Database\ConnectionInterface
+     */
+    protected function connectionFor(string $dbName)
+    {
+        $base = $this->getConnectionName();
+        $config = config("database.connections.{$base}");
+
+        if (!$config) {
+            throw new Exception("PostgreSQL connection '{$base}' is not configured.");
+        }
+
+        $config['database'] = $dbName;
+        $name = 'pgsql_browse';
+
+        config(["database.connections.{$name}" => $config]);
+        DB::purge($name);
+
+        return DB::connection($name);
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function listTables(string $dbName): array
+    {
+        try {
+            $connection = $this->connectionFor($dbName);
+
+            return $connection->select("
+                SELECT
+                    c.relname AS name,
+                    COALESCE(c.reltuples, 0)::bigint AS \"rows\",
+                    ROUND(pg_total_relation_size(c.oid) / 1024.0 / 1024.0, 2) AS size_mb
+                FROM pg_class c
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE c.relkind = 'r'
+                  AND n.nspname = 'public'
+                ORDER BY c.relname
+            ");
+        } catch (Exception $e) {
+            return [];
+        }
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getTableColumns(string $dbName, string $table): array
+    {
+        try {
+            $connection = $this->connectionFor($dbName);
+
+            return $connection->select("
+                SELECT
+                    column_name AS name,
+                    data_type AS type,
+                    is_nullable AS nullable,
+                    '' AS \"key\",
+                    column_default AS \"default\",
+                    '' AS extra
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = ?
+                ORDER BY ordinal_position
+            ", [$table]);
+        } catch (Exception $e) {
+            return [];
+        }
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getTableRowCount(string $dbName, string $table): int
+    {
+        $connection = $this->connectionFor($dbName);
+
+        if (!$this->tableExists($connection, $table)) {
+            throw new Exception("Table \"{$table}\" does not exist in \"{$dbName}\".");
+        }
+
+        $result = $connection->selectOne(
+            "SELECT COUNT(*) AS count FROM \"public\".{$this->quoteIdent($table)}"
+        );
+
+        return (int) ($result->count ?? 0);
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getTableRows(string $dbName, string $table, int $limit = 50, int $offset = 0): array
+    {
+        $connection = $this->connectionFor($dbName);
+
+        if (!$this->tableExists($connection, $table)) {
+            throw new Exception("Table \"{$table}\" does not exist in \"{$dbName}\".");
+        }
+
+        $limit = max(1, min($limit, 1000));
+        $offset = max(0, $offset);
+
+        return $connection->select(
+            "SELECT * FROM \"public\".{$this->quoteIdent($table)} LIMIT {$limit} OFFSET {$offset}"
+        );
+    }
+
+    /**
+     * Check whether a table exists in the public schema using a bound query.
+     *
+     * @param \Illuminate\Database\ConnectionInterface $connection
+     * @param string $table The table name
+     * @return bool
+     */
+    protected function tableExists($connection, string $table): bool
+    {
+        $result = $connection->selectOne("
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+              AND table_name = ?
+            LIMIT 1
+        ", [$table]);
+
+        return $result !== null;
+    }
+
+    /**
+     * Quote a PostgreSQL identifier safely.
+     *
+     * @param string $ident The identifier
+     * @return string
+     */
+    protected function quoteIdent(string $ident): string
+    {
+        return '"' . str_replace('"', '""', $ident) . '"';
+    }
 }

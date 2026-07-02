@@ -674,6 +674,18 @@ canvas {
     color: #c2410c;
 }
 
+.action-btn.info {
+    background: #cffafe;
+    border-color: #67e8f9;
+    color: #0891b2;
+}
+
+.action-btn.info:hover {
+    background: #a5f3fc;
+    border-color: #22d3ee;
+    color: #0e7490;
+}
+
 .action-btn.danger {
     background: #fecaca;
     border-color: #fca5a5;
