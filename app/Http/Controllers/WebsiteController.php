@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\DeployDockerProject;
 use App\Jobs\DeployNginxConfig;
 use App\Jobs\RequestSslCertificate;
 use App\Models\Website;
@@ -103,23 +104,18 @@ class WebsiteController extends Controller
                 $website->update(['port' => $template['default_port'] ?? 8080]);
             }
 
-            // Create Docker compose file
-            $dockerService->createComposeFile($website);
-
-            // Start containers
-            $dockerService->startContainers($website);
-
-            // Deploy Nginx configuration for reverse proxy
-            dispatch(new DeployNginxConfig($website));
-
-            // If SSL is enabled, dispatch SSL certificate request
-            if ($website->ssl_enabled) {
-                dispatch(new RequestSslCertificate($website));
-            }
+            // Bring the whole stack up in the background: write compose -> pull ->
+            // start -> wait healthy -> deploy nginx -> SSL. Doing this inline would
+            // block the request past PHP-FPM's timeout while large images pull, and
+            // would deploy nginx/SSL before the containers are ready. The job
+            // records progress and any failure on the website (docker_status /
+            // docker_error) so it's visible instead of silently swallowed.
+            $website->update(['docker_status' => 'deploying', 'docker_error' => null]);
+            dispatch(new DeployDockerProject($website, withSsl: $website->ssl_enabled));
 
             return redirect()
                 ->route('websites.index', ['type' => 'docker'])
-                ->with('success', 'Docker project created successfully! Containers are starting.');
+                ->with('success', 'Docker project created! Images are pulling and containers are starting in the background — this can take several minutes for large stacks. Watch the Docker status on this page.');
         }
 
         // Dispatch job to deploy Nginx configuration for PHP/Node projects
@@ -574,17 +570,15 @@ class WebsiteController extends Controller
                 ->with('error', 'Docker control is only available for Docker projects.');
         }
 
-        $result = $dockerService->startContainers($website);
-
-        if ($result['success']) {
-            return redirect()
-                ->route('websites.show', $website)
-                ->with('success', $result['message']);
-        }
+        // Run the full bring-up in the background (compose -> pull -> up -> wait ->
+        // nginx). Doing it inline would block the request past the PHP-FPM timeout
+        // while large images pull.
+        $website->update(['docker_status' => 'deploying', 'docker_error' => null]);
+        dispatch(new DeployDockerProject($website));
 
         return redirect()
             ->route('websites.show', $website)
-            ->with('error', $result['error']);
+            ->with('success', 'Starting containers in the background — this can take a few minutes for large stacks.');
     }
 
     /**
@@ -658,17 +652,15 @@ class WebsiteController extends Controller
                 ->with('error', 'Docker control is only available for Docker projects.');
         }
 
-        $result = $dockerService->pullImages($website);
-
-        if ($result['success']) {
-            return redirect()
-                ->route('websites.show', $website)
-                ->with('success', $result['message']);
-        }
+        // Pull + recreate in the background via the full bring-up job (pull -> up
+        // -d applies the new images). Inline pulls would block past the request
+        // timeout for large stacks.
+        $website->update(['docker_status' => 'deploying', 'docker_error' => null]);
+        dispatch(new DeployDockerProject($website));
 
         return redirect()
             ->route('websites.show', $website)
-            ->with('error', $result['error']);
+            ->with('success', 'Pulling latest images and recreating containers in the background — this can take a few minutes.');
     }
 
     /**

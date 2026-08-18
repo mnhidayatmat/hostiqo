@@ -236,7 +236,7 @@
                         @if($website->project_type === 'docker')
                             <div class="info-row">
                                 <span class="info-label"><i class="bi bi-box-seam"></i> Docker</span>
-                                <span class="badge badge-md badge-pastel-{{ $website->docker_status === 'running' ? 'green' : ($website->docker_status === 'pending' ? 'yellow' : ($website->docker_status === 'stopped' ? 'gray' : 'red')) }}">
+                                <span class="badge badge-md badge-pastel-{{ $website->docker_status === 'running' ? 'green' : (in_array($website->docker_status, ['pending', 'deploying', 'restarting']) ? 'yellow' : ($website->docker_status === 'stopped' ? 'gray' : 'red')) }}">
                                     {{ ucfirst($website->docker_status ?? 'unknown') }}
                                 </span>
                             </div>

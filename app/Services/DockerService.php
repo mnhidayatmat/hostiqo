@@ -9,6 +9,19 @@ use Illuminate\Support\Facades\Process;
 
 class DockerService
 {
+    /**
+     * Process timeouts (seconds). The default Laravel Process timeout is 60s,
+     * which is far too short for pulling/starting large multi-service stacks
+     * (e.g. AppFlowy's 13 images can take many minutes on a cold cache). Without
+     * these, `up`/`pull` throw a ProcessTimedOutException mid-pull and the stack
+     * is wrongly marked "error" while it is in fact still working.
+     */
+    protected const TIMEOUT_PULL = 1800;   // 30 min — cold image pulls
+    protected const TIMEOUT_UP = 1800;     // 30 min — pull + create + start
+    protected const TIMEOUT_DOWN = 300;    // 5 min — stop & remove
+    protected const TIMEOUT_RESTART = 300; // 5 min
+    protected const TIMEOUT_SHORT = 60;    // ps / logs / quick queries
+
     protected bool $isLocal;
     protected string $dockerProjectsPath;
 
@@ -1153,10 +1166,15 @@ NGINX;
             // Update status to pending
             $website->update(['docker_status' => 'pending']);
 
-            $result = Process::path($projectDir)->run('docker compose up -d');
+            $result = Process::path($projectDir)
+                ->timeout(self::TIMEOUT_UP)
+                ->run('docker compose up -d --remove-orphans');
 
             if ($result->successful()) {
-                $website->update(['docker_status' => 'running']);
+                $website->update([
+                    'docker_status' => 'running',
+                    'docker_error' => null,
+                ]);
 
                 Log::info('Docker containers started', [
                     'website_id' => $website->id,
@@ -1170,14 +1188,21 @@ NGINX;
                 ];
             }
 
-            $website->update(['docker_status' => 'error']);
+            $error = trim($result->errorOutput()) ?: 'Failed to start containers';
+            $website->update([
+                'docker_status' => 'error',
+                'docker_error' => $error,
+            ]);
 
             return [
                 'success' => false,
-                'error' => $result->errorOutput() ?: 'Failed to start containers'
+                'error' => $error,
             ];
         } catch (\Exception $e) {
-            $website->update(['docker_status' => 'error']);
+            $website->update([
+                'docker_status' => 'error',
+                'docker_error' => $e->getMessage(),
+            ]);
 
             Log::error('Failed to start Docker containers', [
                 'website_id' => $website->id,
@@ -1209,7 +1234,9 @@ NGINX;
 
             $projectDir = $this->getProjectDirectory($website);
 
-            $result = Process::path($projectDir)->run('docker compose down');
+            $result = Process::path($projectDir)
+                ->timeout(self::TIMEOUT_DOWN)
+                ->run('docker compose down');
 
             if ($result->successful()) {
                 $website->update(['docker_status' => 'stopped']);
@@ -1262,7 +1289,9 @@ NGINX;
 
             $website->update(['docker_status' => 'restarting']);
 
-            $result = Process::path($projectDir)->run('docker compose restart');
+            $result = Process::path($projectDir)
+                ->timeout(self::TIMEOUT_RESTART)
+                ->run('docker compose restart');
 
             if ($result->successful()) {
                 $website->update(['docker_status' => 'running']);
@@ -1317,7 +1346,9 @@ NGINX;
 
             $projectDir = $this->getProjectDirectory($website);
 
-            $result = Process::path($projectDir)->run('docker compose ps --format json');
+            $result = Process::path($projectDir)
+                ->timeout(self::TIMEOUT_SHORT)
+                ->run('docker compose ps --format json');
 
             if ($result->failed()) {
                 return [
@@ -1362,6 +1393,116 @@ NGINX;
     }
 
     /**
+     * Parse `docker compose ps --format json` output. Newer Compose emits
+     * newline-delimited JSON objects (one per container); older versions emit a
+     * single JSON array. Handle both.
+     *
+     * @param string $output
+     * @return array<int, array<string, mixed>>
+     */
+    protected function parseComposePs(string $output): array
+    {
+        $output = trim($output);
+        if ($output === '') {
+            return [];
+        }
+
+        // Try a single JSON array first.
+        $decoded = json_decode($output, true);
+        if (is_array($decoded) && array_is_list($decoded)) {
+            return $decoded;
+        }
+
+        // Fall back to NDJSON (one object per line).
+        $containers = [];
+        foreach (preg_split('/\r?\n/', $output) as $line) {
+            $line = trim($line);
+            if ($line === '') {
+                continue;
+            }
+            $obj = json_decode($line, true);
+            if (is_array($obj)) {
+                $containers[] = $obj;
+            }
+        }
+
+        return $containers;
+    }
+
+    /**
+     * Block until every service in the stack is ready, or a timeout elapses.
+     *
+     * A container is "ready" when it is running and either has no healthcheck or
+     * reports healthy. Containers that have exited cleanly (code 0 — e.g. one-shot
+     * migration jobs) are also treated as ready. This is used to gate nginx/SSL
+     * deployment so the reverse proxy and ACME challenge don't run against a stack
+     * that is still pulling images or starting up.
+     *
+     * @param Website $website
+     * @param int $maxWaitSeconds
+     * @param int $intervalSeconds
+     * @return array{ready: bool, containers: array, unready: array<int, string>}
+     */
+    public function waitForHealthy(Website $website, int $maxWaitSeconds = 600, int $intervalSeconds = 5): array
+    {
+        $projectDir = $this->getProjectDirectory($website);
+        $deadline = time() + $maxWaitSeconds;
+        $containers = [];
+        $unready = [];
+
+        do {
+            $result = Process::path($projectDir)
+                ->timeout(self::TIMEOUT_SHORT)
+                ->run('docker compose ps --all --format json');
+
+            if ($result->failed()) {
+                sleep($intervalSeconds);
+                continue;
+            }
+
+            $containers = $this->parseComposePs($result->output());
+            if (empty($containers)) {
+                sleep($intervalSeconds);
+                continue;
+            }
+
+            $unready = [];
+            foreach ($containers as $c) {
+                $name = $c['Service'] ?? ($c['Name'] ?? 'unknown');
+                $state = strtolower((string) ($c['State'] ?? ''));
+                $health = strtolower((string) ($c['Health'] ?? ''));
+                $exitCode = (int) ($c['ExitCode'] ?? 0);
+
+                // Cleanly-exited one-shot containers are fine.
+                if ($state === 'exited' && $exitCode === 0) {
+                    continue;
+                }
+
+                $ready = $state === 'running'
+                    && ($health === '' || $health === 'healthy');
+
+                if (!$ready) {
+                    $unready[] = $health !== ''
+                        ? "{$name} ({$state}/{$health})"
+                        : "{$name} ({$state})";
+                }
+            }
+
+            if (empty($unready)) {
+                return ['ready' => true, 'containers' => $containers, 'unready' => []];
+            }
+
+            if (time() >= $deadline) {
+                break;
+            }
+
+            sleep($intervalSeconds);
+        } while (time() < $deadline);
+
+        return ['ready' => false, 'containers' => $containers, 'unready' => $unready];
+    }
+
+    /**
      * Get Docker container logs for a website.
      *
      * @param Website $website
@@ -1386,7 +1527,9 @@ NGINX;
                 $command .= ' ' . escapeshellarg($service);
             }
 
-            $result = Process::path($projectDir)->run($command);
+            $result = Process::path($projectDir)
+                ->timeout(self::TIMEOUT_SHORT)
+                ->run($command);
 
             return [
                 'success' => true,
@@ -1423,7 +1566,9 @@ NGINX;
 
             $projectDir = $this->getProjectDirectory($website);
 
-            $result = Process::path($projectDir)->run('docker compose pull');
+            $result = Process::path($projectDir)
+                ->timeout(self::TIMEOUT_PULL)
+                ->run('docker compose pull');
 
             if ($result->successful()) {
                 Log::info('Docker images pulled', [
@@ -1439,7 +1584,7 @@ NGINX;
 
             return [
                 'success' => false,
-                'error' => $result->errorOutput() ?: 'Failed to pull images'
+                'error' => trim($result->errorOutput()) ?: 'Failed to pull images'
             ];
         } catch (\Exception $e) {
             Log::error('Failed to pull Docker images', [
@@ -1479,7 +1624,9 @@ NGINX;
                 $command .= ' -v';
             }
 
-            Process::path($projectDir)->run($command);
+            Process::path($projectDir)
+                ->timeout(self::TIMEOUT_DOWN)
+                ->run($command);
 
             // Delete project directory
             if ($this->isLocal) {

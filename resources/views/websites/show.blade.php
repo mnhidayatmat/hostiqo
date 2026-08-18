@@ -168,6 +168,14 @@
                                 </span>
                             </div>
                         </div>
+                        @if($website->docker_error)
+                        <div class="row mb-3">
+                            <div class="col-md-4">Last Error</div>
+                            <div class="col-md-8">
+                                <div class="alert alert-danger py-2 px-3 mb-0" style="white-space: pre-wrap; word-break: break-word;"><small>{{ $website->docker_error }}</small></div>
+                            </div>
+                        </div>
+                        @endif
                     @endif
 
                     <hr class="my-4">

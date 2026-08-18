@@ -40,7 +40,11 @@ return [
             'connection' => env('DB_QUEUE_CONNECTION'),
             'table' => env('DB_QUEUE_TABLE', 'jobs'),
             'queue' => env('DB_QUEUE', 'default'),
-            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 90),
+            // Must exceed the longest job timeout, otherwise a still-running job
+            // (e.g. ProcessDeployment 600s, DeployDockerProject 1800s) is made
+            // visible again and re-reserved by a second worker mid-run, causing
+            // duplicate execution. Keep this >= the highest job $timeout.
+            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 3600),
             'after_commit' => false,
         ],
 

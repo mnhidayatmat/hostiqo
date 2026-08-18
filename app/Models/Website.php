@@ -38,6 +38,7 @@ class Website extends Model
         'docker_image',
         'docker_tag',
         'docker_status',
+        'docker_error',
         'docker_env',
         'docker_ports',
         'docker_volumes',
@@ -177,6 +178,7 @@ class Website extends Model
             'error' => 'danger',
             'exited' => 'danger',
             'pending' => 'warning',
+            'deploying' => 'info',
             default => 'secondary',
         };
     }
