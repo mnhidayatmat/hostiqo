@@ -115,6 +115,16 @@ class DebianServiceManagerService extends AbstractServiceManagerService
                 'supports_reload' => true,
                 'icon' => 'clock'
             ],
+
+            // AI Agent — systemd unit wrapping the Hermes docker compose stack.
+            // Absent units are filtered out by getAvailableServices(), so this
+            // entry simply doesn't render on servers where Hermes isn't installed.
+            'hermes' => [
+                'name' => 'Hermes Agent',
+                'service' => 'hermes',
+                'supports_reload' => true,
+                'icon' => 'robot'
+            ],
         ];
     }
 }

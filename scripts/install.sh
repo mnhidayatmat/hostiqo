@@ -936,6 +936,14 @@ www-data ALL=(ALL) NOPASSWD: /bin/systemctl restart mysql
 www-data ALL=(ALL) NOPASSWD: /bin/systemctl start mariadb
 www-data ALL=(ALL) NOPASSWD: /bin/systemctl stop mariadb
 www-data ALL=(ALL) NOPASSWD: /bin/systemctl restart mariadb
+
+# Hermes Agent (systemd unit wrapping its docker compose stack). Only these three
+# verbs are granted -- the panel never needs to run docker itself, so www-data is
+# deliberately NOT in the docker group (that group is equivalent to root).
+www-data ALL=(ALL) NOPASSWD: /bin/systemctl start hermes
+www-data ALL=(ALL) NOPASSWD: /bin/systemctl stop hermes
+www-data ALL=(ALL) NOPASSWD: /bin/systemctl restart hermes
+www-data ALL=(ALL) NOPASSWD: /bin/journalctl -u hermes -n * --no-pager
 www-data ALL=(ALL) NOPASSWD: /bin/systemctl start fail2ban
 www-data ALL=(ALL) NOPASSWD: /bin/systemctl stop fail2ban
 www-data ALL=(ALL) NOPASSWD: /bin/systemctl restart fail2ban
@@ -1062,6 +1070,12 @@ nginx ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart redis
 nginx ALL=(ALL) NOPASSWD: /usr/bin/systemctl start mariadb
 nginx ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop mariadb
 nginx ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart mariadb
+
+# Hermes Agent (see the Debian block above for rationale)
+nginx ALL=(ALL) NOPASSWD: /usr/bin/systemctl start hermes
+nginx ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop hermes
+nginx ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart hermes
+nginx ALL=(ALL) NOPASSWD: /usr/bin/journalctl -u hermes -n * --no-pager
 nginx ALL=(ALL) NOPASSWD: /usr/bin/systemctl start fail2ban
 nginx ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop fail2ban
 nginx ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart fail2ban
