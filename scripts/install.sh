@@ -76,7 +76,10 @@ EOF
 
 # Default installation path
 DEFAULT_APP_DIR="/var/www/hostiqo"
-REPO_URL="https://github.com/hymns/hostiqo.git"
+# Public HTTPS clone: the installer runs as root on a fresh server with no GitHub SSH key,
+# so git@github.com: would fail with "Permission denied (publickey)". Override this env var
+# (e.g. REPO_URL=git@github.com:mnhidayatmat/hostiqo.git) when a deploy key IS present.
+REPO_URL="${REPO_URL:-https://github.com/mnhidayatmat/hostiqo.git}"
 
 # Will be set after clone/detection
 APP_DIR=""

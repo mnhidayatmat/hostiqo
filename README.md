@@ -106,13 +106,13 @@ All other dependencies (PHP, MySQL, Nginx, Redis, etc.) will be installed automa
 ### One-Command Install 🚀
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/hymns/hostiqo/master/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/mnhidayatmat/hostiqo/main/scripts/install.sh | sudo bash
 ```
 
 Or download and run manually:
 
 ```bash
-wget https://raw.githubusercontent.com/hymns/hostiqo/master/scripts/install.sh
+wget https://raw.githubusercontent.com/mnhidayatmat/hostiqo/main/scripts/install.sh
 sudo bash install.sh
 ```
 
