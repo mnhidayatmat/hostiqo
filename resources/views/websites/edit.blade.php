@@ -382,6 +382,26 @@
                             <div class="form-text">Automatically request Let's Encrypt SSL certificate for HTTPS</div>
                         </div>
 
+                        <!-- Extra server names (aliases) -->
+                        <div class="mb-3">
+                            <label class="form-label" for="server_aliases">Additional Domains</label>
+                            <input
+                                type="text"
+                                class="form-control @error('server_aliases') is-invalid @enderror"
+                                id="server_aliases"
+                                name="server_aliases"
+                                value="{{ old('server_aliases', $website->server_aliases ?? '') }}"
+                                placeholder="*.example.com, another.example.com">
+                            <div class="form-text">
+                                Comma-separated extra names this site answers on, in addition to the
+                                domain and its www form. Use <code>*.example.com</code> for a
+                                multi-tenant app that serves each tenant on its own subdomain.
+                            </div>
+                            @error('server_aliases')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+
                         <!-- WWW Redirect -->
                         <div class="mb-3">
                             <label class="form-label">

@@ -51,6 +51,7 @@ abstract class AbstractNginxService implements NginxInterface
         
         $sslConfig = $website->ssl_enabled ? $this->getSslConfig($website->domain) : '';
         $wwwRedirectConfig = $this->getWwwRedirectConfig($website);
+        $serverNames = $this->getServerNames($website);
         $securityHeaders = $this->getSecurityHeaders();
         
         $poolName = $website->php_pool_name ?? str_replace('.', '_', $website->domain);
@@ -62,7 +63,7 @@ abstract class AbstractNginxService implements NginxInterface
 server {
     listen 80;
     listen [::]:80;
-    server_name {$website->domain} www.{$website->domain};
+    server_name {$serverNames};
 
 {$sslConfig}
 {$wwwRedirectConfig}
@@ -142,6 +143,7 @@ NGINX;
         $port = $website->port ?? 8080;
         $sslConfig = $website->ssl_enabled ? $this->getSslConfig($website->domain) : '';
         $wwwRedirectConfig = $this->getWwwRedirectConfig($website);
+        $serverNames = $this->getServerNames($website);
         $securityHeaders = $this->getSecurityHeaders();
         $logDir = '/var/log/nginx';
 
@@ -158,7 +160,7 @@ NGINX;
 server {
     listen 80;
     listen [::]:80;
-    server_name {$website->domain} www.{$website->domain};
+    server_name {$serverNames};
 
 {$sslConfig}
 {$wwwRedirectConfig}
@@ -213,6 +215,7 @@ NGINX;
         
         $sslConfig = $website->ssl_enabled ? $this->getSslConfig($website->domain) : '';
         $wwwRedirectConfig = $this->getWwwRedirectConfig($website);
+        $serverNames = $this->getServerNames($website);
         $securityHeaders = $this->getSecurityHeaders();
         $logDir = '/var/log/nginx';
 
@@ -220,7 +223,7 @@ NGINX;
 server {
     listen 80;
     listen [::]:80;
-    server_name {$website->domain} www.{$website->domain};
+    server_name {$serverNames};
 
 {$sslConfig}
 {$wwwRedirectConfig}
@@ -510,20 +513,48 @@ SSL;
      */
     protected function getWwwRedirectConfig(Website $website): string
     {
-        if (!$website->www_redirect) {
+        // The column is an enum: 'none' | 'to_www' | 'to_non_www'. 'none' is a
+        // non-empty string, so a truthiness check treats it as "redirect" --
+        // check the value.
+        if (! in_array($website->www_redirect, ['to_www', 'to_non_www'], true)) {
             return '';
         }
 
-        $redirectTo = $website->www_redirect === 'www' 
-            ? "www.{$website->domain}" 
-            : $website->domain;
+        $toWww = $website->www_redirect === 'to_www';
+        $matchHost = $toWww ? $website->domain : "www.{$website->domain}";
+        $redirectTo = $toWww ? "www.{$website->domain}" : $website->domain;
 
+        // Match the ONE host being redirected, never `!= canonical`. A negated
+        // test also catches every other name this block serves -- on a wildcard
+        // (multi-tenant) vhost that 301s every tenant subdomain to the apex.
         return <<<REDIRECT
     # WWW Redirect
-    if (\$host != '{$redirectTo}') {
+    if (\$host = '{$matchHost}') {
         return 301 \$scheme://{$redirectTo}\$request_uri;
     }
 REDIRECT;
+    }
+
+    /**
+     * The server_name line: the domain, its www form, plus any extra aliases.
+     *
+     * Multi-tenant apps serve tenants as subdomains and need a wildcard
+     * (`*.example.com`) alongside the apex. Without this the panel could only
+     * ever emit two names, so regenerating such a vhost silently dropped every
+     * tenant. Aliases are stored comma-separated on the website.
+     *
+     * @param Website $website The website model
+     * @return string Space-separated server names
+     */
+    protected function getServerNames(Website $website): string
+    {
+        $names = [$website->domain, "www.{$website->domain}"];
+
+        foreach (preg_split('/[\s,]+/', (string) $website->server_aliases, -1, PREG_SPLIT_NO_EMPTY) as $alias) {
+            $names[] = $alias;
+        }
+
+        return implode(' ', array_unique($names));
     }
 
     /**

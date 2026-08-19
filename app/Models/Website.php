@@ -14,6 +14,7 @@ class Website extends Model
     protected $fillable = [
         'name',
         'domain',
+        'server_aliases',
         'root_path',
         'working_directory',
         'project_type',
