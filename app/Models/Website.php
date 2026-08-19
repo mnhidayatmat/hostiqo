@@ -299,4 +299,12 @@ class Website extends Model
     {
         return !empty($this->cloudflare_zone_id) && !empty($this->cloudflare_record_id);
     }
+
+    /**
+     * Databases this website uses.
+     */
+    public function databases(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(Database::class);
+    }
 }

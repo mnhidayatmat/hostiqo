@@ -17,6 +17,7 @@ class Database extends Model
      * @var array<int, string>
      */
     protected $fillable = [
+        'website_id',
         'type',
         'name',
         'username',
@@ -90,5 +91,13 @@ class Database extends Model
     public function scopeOfType($query, string $type)
     {
         return $query->where('type', $type);
+    }
+
+    /**
+     * The website that uses this database, if it is managed here.
+     */
+    public function website(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(Website::class);
     }
 }

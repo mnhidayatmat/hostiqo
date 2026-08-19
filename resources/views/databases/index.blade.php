@@ -145,6 +145,16 @@
                                 </span>
                             </span>
                         </div>
+                        <div class="info-row">
+                            <span class="info-label"><i class="bi bi-hdd-network"></i> Website</span>
+                            <span class="info-value">
+                                @if($database->website)
+                                    <a href="{{ route('websites.show', $database->website) }}">{{ $database->website->domain }}</a>
+                                @else
+                                    <span class="text-muted">not linked</span>
+                                @endif
+                            </span>
+                        </div>
                         @if($database->description)
                         <div class="info-row">
                             <span class="info-label"><i class="bi bi-card-text"></i> Description</span>

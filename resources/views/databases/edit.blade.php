@@ -69,6 +69,23 @@
                         <i class="bi bi-pencil me-2"></i> Editable Fields
                     </div>
                     <div class="card-body">
+                        <!-- Linked website -->
+                        <div class="mb-3">
+                            <label class="form-label" for="website_id">Website</label>
+                            <select class="form-select @error('website_id') is-invalid @enderror"
+                                    id="website_id" name="website_id">
+                                <option value="">— not linked —</option>
+                                @foreach (($websites ?? []) as $site)
+                                    <option value="{{ $site->id }}"
+                                        @selected(old('website_id', $database->website_id ?? null) == $site->id)>
+                                        {{ $site->domain }}
+                                    </option>
+                                @endforeach
+                            </select>
+                            <div class="form-text">Which site uses this database. Optional — leave unset for a shared database.</div>
+                            @error('website_id')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                        </div>
+
                         <div class="mb-3">
                             <label for="description" class="form-label">Description</label>
                             <textarea

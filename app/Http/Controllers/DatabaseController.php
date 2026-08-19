@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Database;
+use App\Models\Website;
 use App\Services\DatabaseService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -66,13 +67,14 @@ class DatabaseController extends Controller
      */
     public function create()
     {
+        $websites = Website::orderBy('domain')->get();
         // Check permissions for both database types
         $permissions = [
             'mysql' => $this->databaseService->mysql()->canCreateDatabase(),
             'postgresql' => $this->databaseService->postgresql()->canCreateDatabase(),
         ];
 
-        return view('databases.create', compact('permissions'));
+        return view('databases.create', compact('permissions', 'websites'));
     }
 
     /**
@@ -90,6 +92,7 @@ class DatabaseController extends Controller
             'password' => ['required', 'string', 'min:8', 'confirmed'],
             'host' => ['nullable', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:500'],
+            'website_id' => ['nullable', 'exists:websites,id'],
         ]);
 
         $host = $validated['host'] ?? 'localhost';
@@ -130,6 +133,7 @@ class DatabaseController extends Controller
                 'username' => $validated['username'],
                 'host' => $host,
                 'description' => $validated['description'] ?? null,
+                'website_id' => $validated['website_id'] ?? null,
             ]);
 
             return redirect()
@@ -238,7 +242,8 @@ class DatabaseController extends Controller
      */
     public function edit(Database $database)
     {
-        return view('databases.edit', compact('database'));
+        $websites = Website::orderBy('domain')->get();
+        return view('databases.edit', compact('database', 'websites'));
     }
 
     /**
@@ -252,6 +257,7 @@ class DatabaseController extends Controller
     {
         $validated = $request->validate([
             'description' => ['nullable', 'string', 'max:500'],
+            'website_id' => ['nullable', 'exists:websites,id'],
         ]);
 
         $database->update($validated);
