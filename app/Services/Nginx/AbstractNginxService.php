@@ -50,6 +50,7 @@ abstract class AbstractNginxService implements NginxInterface
         $documentRoot = rtrim($website->root_path, '/') . ($workingDir ? '/' . $workingDir : '');
         
         $sslConfig = $website->ssl_enabled ? $this->getSslConfig($website->domain) : '';
+        $httpsRedirect = $website->ssl_enabled ? $this->getHttpsRedirectConfig() : '';
         $wwwRedirectConfig = $this->getWwwRedirectConfig($website);
         $serverNames = $this->getServerNames($website);
         $securityHeaders = $this->getSecurityHeaders();
@@ -67,6 +68,7 @@ server {
 
 {$sslConfig}
 {$wwwRedirectConfig}
+{$httpsRedirect}
 
     root {$documentRoot};
     index index.php index.html index.htm;
@@ -142,6 +144,7 @@ NGINX;
     {
         $port = $website->port ?? 8080;
         $sslConfig = $website->ssl_enabled ? $this->getSslConfig($website->domain) : '';
+        $httpsRedirect = $website->ssl_enabled ? $this->getHttpsRedirectConfig() : '';
         $wwwRedirectConfig = $this->getWwwRedirectConfig($website);
         $serverNames = $this->getServerNames($website);
         $securityHeaders = $this->getSecurityHeaders();
@@ -164,6 +167,7 @@ server {
 
 {$sslConfig}
 {$wwwRedirectConfig}
+{$httpsRedirect}
 
     # Logging
     access_log {$logDir}/{$website->domain}-access.log;
@@ -214,6 +218,7 @@ NGINX;
         $documentRoot = rtrim($website->root_path, '/') . ($workingDir ? '/' . $workingDir : '');
         
         $sslConfig = $website->ssl_enabled ? $this->getSslConfig($website->domain) : '';
+        $httpsRedirect = $website->ssl_enabled ? $this->getHttpsRedirectConfig() : '';
         $wwwRedirectConfig = $this->getWwwRedirectConfig($website);
         $serverNames = $this->getServerNames($website);
         $securityHeaders = $this->getSecurityHeaders();
@@ -227,6 +232,7 @@ server {
 
 {$sslConfig}
 {$wwwRedirectConfig}
+{$httpsRedirect}
 
     root {$documentRoot};
     index index.html index.htm;
@@ -555,6 +561,27 @@ REDIRECT;
         }
 
         return implode(' ', array_unique($names));
+    }
+
+
+    /**
+     * Redirect plain HTTP to HTTPS.
+     *
+     * The generated vhost listens on 80 and 443 in one block, so without this a
+     * site with a certificate still answers over plain HTTP -- session cookies
+     * and form posts included. Let's Encrypt follows redirects on HTTP-01, so
+     * this does not interfere with certificate renewal.
+     *
+     * @return string The redirect configuration
+     */
+    protected function getHttpsRedirectConfig(): string
+    {
+        return <<<REDIRECT
+    # Force HTTPS
+    if (\$scheme != "https") {
+        return 301 https://\$host\$request_uri;
+    }
+REDIRECT;
     }
 
     /**
