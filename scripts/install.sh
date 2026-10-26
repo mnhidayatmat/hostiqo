@@ -944,6 +944,12 @@ www-data ALL=(ALL) NOPASSWD: /bin/systemctl start hermes
 www-data ALL=(ALL) NOPASSWD: /bin/systemctl stop hermes
 www-data ALL=(ALL) NOPASSWD: /bin/systemctl restart hermes
 www-data ALL=(ALL) NOPASSWD: /bin/journalctl -u hermes -n * --no-pager
+
+# OpenBot self-hosted server
+www-data ALL=(ALL) NOPASSWD: /bin/systemctl start openbot
+www-data ALL=(ALL) NOPASSWD: /bin/systemctl stop openbot
+www-data ALL=(ALL) NOPASSWD: /bin/systemctl restart openbot
+www-data ALL=(ALL) NOPASSWD: /bin/journalctl -u openbot -n * --no-pager
 www-data ALL=(ALL) NOPASSWD: /bin/systemctl start fail2ban
 www-data ALL=(ALL) NOPASSWD: /bin/systemctl stop fail2ban
 www-data ALL=(ALL) NOPASSWD: /bin/systemctl restart fail2ban
@@ -1076,6 +1082,12 @@ nginx ALL=(ALL) NOPASSWD: /usr/bin/systemctl start hermes
 nginx ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop hermes
 nginx ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart hermes
 nginx ALL=(ALL) NOPASSWD: /usr/bin/journalctl -u hermes -n * --no-pager
+
+# OpenBot self-hosted server
+nginx ALL=(ALL) NOPASSWD: /usr/bin/systemctl start openbot
+nginx ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop openbot
+nginx ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart openbot
+nginx ALL=(ALL) NOPASSWD: /usr/bin/journalctl -u openbot -n * --no-pager
 nginx ALL=(ALL) NOPASSWD: /usr/bin/systemctl start fail2ban
 nginx ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop fail2ban
 nginx ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart fail2ban

@@ -125,6 +125,14 @@ class RhelServiceManagerService extends AbstractServiceManagerService
                 'supports_reload' => true,
                 'icon' => 'robot'
             ],
+
+            // OpenBot self-hosted server (systemd unit from OpenBot's install-server.sh).
+            'openbot' => [
+                'name' => 'OpenBot',
+                'service' => 'openbot',
+                'supports_reload' => false,
+                'icon' => 'robot'
+            ],
         ];
     }
 }
